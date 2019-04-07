@@ -1,0 +1,169 @@
+    # Traefik 介绍
+# 使用 GO 语言编译可执行文件
+# 支持多种后台
+# 支持 Websocket, HTTP/2, GRPC
+
+    # 环境、软件准备
+# Kubernetes 集群
+
+    # 部署 Traefik
+cd /home/wanyang3/k8s/
+git clone https://github.com/containous/traefik.git
+
+kubectl create -f traefik/examples/k8s/traefik-rbac.yaml
+kubectl create -f traefik/examples/k8s/traefik-deployment.yaml
+# RBAC 安全认证方式 rbac.yaml 使用tolerations调度
+
+kubectl get pods --all-namespaces -o wide
+kubectl get service --all-namespaces
+
+curl http://10.222.76.93:30960/dashboard/#/
+
+    # 部署 Traefik UI
+vi ui.yaml
+kubectl create -f ui.yaml
+kubectl get service --all-namespaces
+kubectl get pods -n kube-system -l k8s-app=traefik-ingress-lb -o wide
+# UI 界面 traefik-ui.k8s/
+
+
+
+
+    # 部署自定义 Ingress
+# 演示
+ # kubernetes-dashboard
+ # elasticsearch-logging    
+
+vi dashboard-ela-k8s-traefik.yaml
+    apiVersion: extensions/v1beta1
+    kind: Ingress
+    metadata:
+      name: dashboard-ela-k8s-traefik
+      namespace: kube-system
+      annotations:
+        kubernetes.io/ingress.class: traefik
+    spec:
+      rules:
+      - host: dashboard.k8s.traefik
+        http:
+          paths:
+          - path: /  
+            backend:
+              serviceName: kubernetes-dashboard
+              servicePort: 80
+      - host: ela.k8s.traefik
+        http:
+          paths:
+          - path: /  
+            backend:
+              serviceName: elasticsearch-logging
+              servicePort: 9200
+
+kubectl create -f dashboard-ela-k8s-traefik.yaml
+kubectl get ingress --all-namespaces
+
+#ui上可见 dashboard.k8s.traefik 和 ela.k8s.traefik
+
+
+vi my-k8s-traefik.yaml
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: my-k8s-traefik
+  namespace: kube-system
+  annotations:
+    kubernetes.io/ingress.class: traefik
+    traefik.frontend.rule.type: PathPrefixStrip
+spec:
+  rules:
+  - host: my.k8s.traefik
+    http:
+      paths:
+      - path: /dashboard
+        backend:
+          serviceName: kubernetes-dashboard
+          servicePort: 80
+      - path: /kibana
+        backend:
+          serviceName: kibana-logging
+          servicePort: 5601
+
+
+kubectl create -f my-k8s-traefik.yaml
+kubectl get ingress --all-namespaces
+
+# traefik.frontend.rule.type: PathPrefixStrip ?
+
+# 在本地的/etc/hosts里面添加上 traefik.haimaxy.com 与 master 节点外网 IP 的映射关系
+echo "10.236.65.128 my-k8s-ingress" >> /etc/hosts
+
+
+vi traefik.yaml
+    containers:
+    - image: traefik
+    name: traefik-ingress-lb
+    ports:
+    - name: http
+      containerPort: 80
+      hostPort: 80
+    - name: admin
+      containerPort: 8080
+# 指定一个 hostPort
+
+
+
+
+
+
+    # 部分特性说明
+# 自动熔断
+NetworkErrorRatio() > 0.5：监测服务错误率达到50%时，熔断
+LatencyAtQuantileMS(50.0) > 50：监测延时大于50ms时，熔断
+ResponseCodeRatio(500, 600, 0, 600) > 0.5：
+        监测返回状态码为[500-600]在[0-600]区间占比超过50%时，熔断
+
+# 负载均衡策略
+# 一种是 wrr（加权轮训调度算法），一种是 drr（动态加权循环调度算法）
+
+
+docker run -d -p 8080:8080 -p 80:80 -v $PWD/traefik.toml:/etc/traefik/traefik.toml traefik
+helm install stable/traefik
+git clone git@github.com:containous/traefik.git
+
+
+
+
+# tls认证
+openssl req -newkey rsa:2048 -nodes -keyout tls.key -x509 -days 365 -out tls.crt
+kubectl create secret generic traefik-cert --from-file=tls.crt --from-file=tls.key -n kube-system
+
+
+# 配置 Traefik
+    defaultEntryPoints = ["http", "https"]
+
+    [entryPoints]
+      [entryPoints.http]
+      address = ":80"
+        [entryPoints.http.redirect]
+          entryPoint = "https"
+      [entryPoints.https]
+      address = ":443"
+        [entryPoints.https.tls]
+          [[entryPoints.https.tls.certificates]]
+          CertFile = "/ssl/tls.crt"
+          KeyFile = "/ssl/tls.key"
+
+
+# 将上面的 traefik.toml 配置文件通过一个 ConfigMap 对象挂载到 traefik pod 中
+kubectl create configmap traefik-conf --from-file=traefik.toml -n kube-system
+vi traefik.yaml
+
+kubectl apply -f traefik.yaml
+kubectl logs -f traefik-ingress-controller-7dcfd9c6df-v58k7 -n kube-system
+
+vi backend.yaml
+kubectl create -f backend.yaml
+
+vi example-ingress.yaml
+kubectl get ingress
+kubectl describe ingress example-web-app

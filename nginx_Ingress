@@ -1,0 +1,210 @@
+
+    # Ingress 介绍
+# LoadBlancer Service、NodePort Service、Ingress
+# Ingress 的定义为管理对外服务到集群内服务之间规则的集合，
+# 它定义规则来允许进入集群的请求被转发到集群中对应服务上，从来实现服务暴漏
+# Ingress 能把集群内 Service 配置成外网能够访问的 URL，流量负载均衡，终止SSL，提供基于域名访问的虚拟主机等等
+
+# LoadBlancer Service 是 Kubernetes 结合云平台的组件
+
+# NodePort Service 是通过在节点上暴漏端口
+
+# Ingress 使用开源的反向代理负载均衡器来实现对外暴漏服务
+# Nginx     反向代理负载均衡器
+# Ingress Controller    跟 Kubernetes API 交互，实时获取后端 Service、Pod 等的变化
+# Ingress   定义规则
+
+# https://konghq.com/blog/kubernetes-ingress-controller-for-kong/
+
+# https://github.com/jcmoraisjr/haproxy-ingress
+
+  #   # 环境、软件准备
+# https://store.docker.com/
+# gcr.io/google_containers/nginx-ingress-controller
+# gcr.io/google_containers/defaultbackend
+
+
+# 部署脚本
+#!/bin/bash
+images=(
+    nginx-ingress-controller:0.9.0-beta.10 
+    defaultbackend:1.0)
+
+for imageName in ${images[@]} ; do
+    docker pull docker.io/chenliujin/$imageName
+    docker tag docker.io/chenliujin/$imageName gcr.io/google_containers/$imageName 
+    docker rmi docker.io/chenliujin/$imageName
+done   
+
+
+    # 部署 Default Backend
+# 需要部署一个默认后端，用来将未知请求全部负载到这个默认后端上，这个默认后端会返回 404 页面
+cd /home/wanyang3/k8s
+git clone https://github.com/kubernetes/ingress-nginx.git
+git checkout nginx-0.9.0-beta.10
+ls -l ingress-nginx/examples/deployment/nginx/
+
+# kubectl create -f default-backend.yaml
+# 对 kubeadm 集群支持
+vi ingress-nginx/examples/deployment/nginx/kubeadm/nginx-ingress-controller.yaml 
+
+
+    # 部署 Ingress Controller
+# 使用 kubaadm 配置文件
+kubectl create -f ingress-nginx/examples/deployment/nginx/kubeadm/nginx-ingress-controller.yaml
+
+# 使用其他的配置文件，需要先部署 default-backend
+kubectl create -f ingress-nginx/examples/deployment/nginx/nginx-ingress-controller.yaml
+
+kubectl get pods --all-namespaces -o wide
+
+    # 部署 Ingress 
+kubectl get service --all-namespaces
+
+    # Name based virtual hosting
+$ vi dashboard-kibana-ingress.yaml
+
+    apiVersion: extensions/v1beta1
+    kind: Ingress
+    metadata:
+      name: dashboard-kibana-ingress
+      namespace: kube-system
+    spec:
+      rules:
+      - host: dashboard.k8s.ingress
+        http:
+          paths:
+          - backend:
+              serviceName: kubernetes-dashboard
+              servicePort: 80
+      - host: kibana.k8s.ingress
+        http:
+          paths:
+          - backend:
+              serviceName: kibana-logging
+              servicePort: 5601
+
+
+kubectl create -f dashboard-kibana-ingress.yaml
+kubectl get ingress --all-namespaces
+
+# dashboard.k8s.ingress --|               |-> dashboard.k8s.ingress kubernetes-dashboard:80
+#                         | 10.236.65.128 |
+# kibana.k8s.ingress    --|               |-> kibana.k8s.ingress kibana-logging:5601
+
+echo "10.236.65.128 dashboard.k8s.ingress" >> /etc/hosts
+echo "10.236.65.128 kibana.k8s.ingress" >> /etc/hosts
+
+
+# 故障排除
+vi kubernetes/cluster/addons/fluentd-elasticsearch/kibana-controller.yaml
+env:
+  - name: "ELASTICSEARCH_URL"
+    value: "http://elasticsearch-logging:9200"
+  - name: "KIBANA_BASE_URL"
+    value: "/api/v1/proxy/namespaces/kube-system/services/kibana-logging"
+
+# 注意
+vi kubernetes/cluster/addons/fluentd-elasticsearch/kibana-controller.yaml
+env:
+  - name: "ELASTICSEARCH_URL"
+    value: "http://elasticsearch-logging:9200"
+  - name: "KIBANA_BASE_URL"
+    value: ""
+
+kubectl apply -f kubernetes/cluster/addons/fluentd-elasticsearch/kibana-controller.yaml
+
+
+
+
+
+    # Simple fanout
+vi my-k8s-ingress.yaml
+    apiVersion: extensions/v1beta1
+    kind: Ingress
+    metadata:
+      name: my-k8s-ingress
+      namespace: kube-system
+      annotations:
+        ingress.kubernetes.io/rewrite-target: /
+    spec:
+      rules:
+      - host: my.k8s.ingress
+        http:
+          paths:
+          - path: /dashboard
+            backend:
+              serviceName: kubernetes-dashboard
+              servicePort: 80
+
+kubectl create -f my-k8s-ingress.yaml
+
+kubectl get ingress --all-namespaces
+
+echo "10.236.65.128 my-k8s-ingress" >> /etc/hosts
+
+curl http://my.k8s.ingress/dashboard/#!/workload?namespace=_all
+
+
+
+
+
+
+# 新添加一个匹配规则，将 http://my.k8s.ingress/kibana 转发到 kibana-logging
+my.k8s.ingress -> 10.236.65.128 -> / dashboard    kubernetes-dashboard:80
+                                   / kibana       kibana-logging:5601
+
+
+# 方式1
+kubectl edit ingress my.k8s.ingress
+    spec:
+      rules:
+      - host: my.k8s.ingress
+        http:
+          paths:
+          - path: /dashboard
+            backend:
+              serviceName: kubernetes-dashboard
+              servicePort: 80
+          - path: /kibana
+            backend:
+              serviceName: kibana-logging
+              servicePort: 5601
+
+# 方式2
+vi my-k8s-ingress.yaml
+    apiVersion: extensions/v1beta1
+    kind: Ingress
+    metadata:
+      name: my-k8s-ingress
+      namespace: kube-system
+      annotations:
+        ingress.kubernetes.io/rewrite-target: /
+    spec:
+      rules:
+      - host: my.k8s.ingress
+        http:
+          paths:
+          - path: /dashboard
+            backend:
+              serviceName: kubernetes-dashboard
+              servicePort: 80
+          - path: /kibana
+            backend:
+              serviceName: kibana-logging
+              servicePort: 5601
+
+kubectl apply -f my-k8s-ingress.yaml 或者 kubectl replace -f my-k8s-ingress.yaml 
+
+
+# 访问失败
+# 修改下 Kibana 的 Yaml 配置文件
+vi kubernetes/cluster/addons/fluentd-elasticsearch/kibana-controller.yaml
+env:
+  - name: "ELASTICSEARCH_URL"
+    value: "http://elasticsearch-logging:9200"
+  - name: "KIBANA_BASE_URL"
+    value: "/kibana"
+
+kubectl apply -f kubernetes/cluster/addons/fluentd-elasticsearch/kibana-controller.yaml
+
