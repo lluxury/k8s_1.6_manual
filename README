@@ -13,6 +13,9 @@
     # 私有 docker registry，使用 ceph rgw 后端存储，TLS + HTTP Basic 认证
 
     # 由10.64.3.7牵头
+    touch environment.sh
+    vi !$
+
     mkdir -p /root/local/bin
     cp environment.sh /root/local/bin
     # x3 
@@ -55,7 +58,7 @@ cd /root
     # 创建 CA 证书签名请求
     ca-csr.json
 
-    # 生成 CA 证书和私钥
+    # 生成 CA 证书和私钥,唯一
 cfssl gencert -initca ca-csr.json | cfssljson -bare ca
 
     #   分发证书
@@ -85,32 +88,56 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
 
 
 
-# 部署高可用 Etcd 集群
-# etcd-host0：10.64.3.7
-# etcd-host1：10.64.3.8
-# etcd-host2：10.66.3.86
+  # 部署高可用 Etcd 集群
+  # etcd-host0：10.64.3.7
+  # etcd-host1：10.64.3.8
+  # etcd-host2：10.66.3.86
 
-# 需要部署3次
+# 需要部署3次,部分为零时变量
 #   使用的变量
-export NODE_NAME=etcd-host0 
-export NODE_IP=10.64.3.7
+    export NODE_NAME=etcd-host0 
+    export NODE_IP=10.64.3.7
+    export NODE_IPS="10.64.3.7 10.64.3.8 10.66.3.86" 
+    export ETCD_NODES=etcd-host0=https://10.64.3.7:2380,etcd-host1=https://10.64.3.8:2380,etcd-host2=https://10.66.3.86:2380
+    source /root/local/bin/environment.sh
 
-export NODE_IPS="10.64.3.7 10.64.3.8 10.66.3.86" 
-export ETCD_NODES=etcd-host0=https://10.64.3.7:2380,etcd-host1=https://10.64.3.8:2380,etcd-host2=https://10.66.3.86:2380
-source /root/local/bin/environment.sh
+
+
+    export NODE_NAME=etcd-host1 
+    export NODE_IP=10.64.3.8
+    export NODE_IPS="10.64.3.7 10.64.3.8 10.66.3.86" 
+    export ETCD_NODES=etcd-host0=https://10.64.3.7:2380,etcd-host1=https://10.64.3.8:2380,etcd-host2=https://10.66.3.86:2380
+    source /root/local/bin/environment.sh
+
+
+
+    export NODE_NAME=etcd-host2 
+    export NODE_IP=10.66.3.86
+    export NODE_IPS="10.64.3.7 10.64.3.8 10.66.3.86" 
+    export ETCD_NODES=etcd-host0=https://10.64.3.7:2380,etcd-host1=https://10.64.3.8:2380,etcd-host2=https://10.66.3.86:2380
+    source /root/local/bin/environment.sh
+
+
 
 #   下载二进制文件
-yum install -y wget
-wget https://github.com/coreos/etcd/releases/download/v3.1.6/etcd-v3.1.6-linux-amd64.tar.gz
-tar -xvf etcd-v3.1.6-linux-amd64.tar.gz
-sudo mv etcd-v3.1.6-linux-amd64/etcd* /root/local/bin
+    yum install -y wget
+    wget https://github.com/coreos/etcd/releases/download/v3.1.6/etcd-v3.1.6-linux-amd64.tar.gz
 
-#   创建 TLS 秘钥和证书
-# 创建 etcd 证书签名请求
-mkdir ssl
-cd ~/ssl
-etcd-csr.json 
-export PATH=/root/local/bin:$PATH
+    cd /root/
+    scp root@10.64.3.7:/root/etcd-v3.1.6-linux-amd64.tar.gz .
+
+    tar -xvf etcd-v3.1.6-linux-amd64.tar.gz
+    sudo mv etcd-v3.1.6-linux-amd64/etcd* /root/local/bin
+
+    #   创建 TLS 秘钥和证书
+    # 创建 etcd 证书签名请求
+
+    cd /root
+    mkdir ssl
+    cd ~/ssl
+    export PATH=/root/local/bin:$PATH
+
+    etcd-csr.json 
 
 # 生成 etcd 证书和私钥
 cfssl gencert -ca=/etc/kubernetes/ssl/ca.pem \
@@ -119,6 +146,10 @@ cfssl gencert -ca=/etc/kubernetes/ssl/ca.pem \
 -profile=kubernetes etcd-csr.json | cfssljson -bare etcd
 
 ls etcd*
+
+# 这里生成了3套证书
+# kubernetes 和 etcd 证书中包含有使用该证书的 IP，所以需要对各节点分别生成，不能共享
+
 sudo mkdir -p /etc/etcd/ssl
 sudo mv etcd*.pem /etc/etcd/ssl
 rm etcd.csr  etcd-csr.json
@@ -132,9 +163,12 @@ firewall-cmd --zone=public --add-port=2379/tcp --permanent
 firewall-cmd --zone=public --add-port=2380/tcp --permanent
 firewall-cmd --reload
 
+# 注意这里要线性操作,一台好了再做一台
+
 sudo mv etcd.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable etcd
+
 sudo systemctl start etcd
 systemctl status etcd
 
@@ -147,6 +181,7 @@ for ip in ${NODE_IPS}; do
   --key=/etc/etcd/ssl/etcd-key.pem \
   endpoint health; done
 
+# date -s "2019-06-21 18:44:22"
 
 
 # 下载和配置 Kubectl 命令行工具
