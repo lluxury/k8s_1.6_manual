@@ -1,3 +1,4 @@
+cat > ca-config.json <<EOF
 {
   "signing": {
     "default": {
@@ -16,3 +17,4 @@
     }
   }
 }
+EOF

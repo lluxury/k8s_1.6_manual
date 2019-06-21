@@ -1,71 +1,87 @@
-本地测试笔记
+    # 10.64.3.7
+    # 10.64.3.8
+    # 10.66.3.86
 
-# 10.64.3.7
-# 10.64.3.8
-# 10.66.3.86
+    # Kubernetes 1.6.2
+    # Docker 17.04.0-ce
+    # Etcd 3.1.6
+    # Flanneld 0.7.1 vxlan 网络
+    # TLS 认证通信 (所有组件，如 etcd、kubernetes master 和 node)
+    # RBAC 授权
+    # kubelet TLS BootStrapping
+    # kubedns、dashboard、heapster (influxdb、grafana)、EFK (elasticsearch、fluentd、kibana) 插件
+    # 私有 docker registry，使用 ceph rgw 后端存储，TLS + HTTP Basic 认证
 
-# Kubernetes 1.6.2
-# Docker 17.04.0-ce
-# Etcd 3.1.6
-# Flanneld 0.7.1 vxlan 网络
-# TLS 认证通信 (所有组件，如 etcd、kubernetes master 和 node)
-# RBAC 授权
-# kubelet TLS BootStrapping
-# kubedns、dashboard、heapster (influxdb、grafana)、EFK (elasticsearch、fluentd、kibana) 插件
-# 私有 docker registry，使用 ceph rgw 后端存储，TLS + HTTP Basic 认证
+    # 由10.64.3.7牵头
+    mkdir -p /root/local/bin
+    cp environment.sh /root/local/bin
+    # x3 
 
-# 由10.64.3.7牵头
-mkdir -p /root/local/bin
-cp environment.sh /root/local/bin
-# x3 
+    # 创建 CA 证书和秘钥
+    # 3台都要
+    #   安装 CFSSL
+    yum install wget -y
+    wget https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
+    chmod +x cfssl_linux-amd64
+    sudo mv cfssl_linux-amd64 /root/local/bin/cfssl
 
-# 创建 CA 证书和秘钥
-# 3台都要
-#   安装 CFSSL
-yum install wget -y
-wget https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
-chmod +x cfssl_linux-amd64
-sudo mv cfssl_linux-amd64 /root/local/bin/cfssl
+    wget https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64
+    chmod +x cfssljson_linux-amd64
+    sudo mv cfssljson_linux-amd64 /root/local/bin/cfssljson
 
-wget https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64
-chmod +x cfssljson_linux-amd64
-sudo mv cfssljson_linux-amd64 /root/local/bin/cfssljson
+    wget https://pkg.cfssl.org/R1.2/cfssl-certinfo_linux-amd64
+    chmod +x cfssl-certinfo_linux-amd64
+    sudo mv cfssl-certinfo_linux-amd64 /root/local/bin/cfssl-certinfo
 
-wget https://pkg.cfssl.org/R1.2/cfssl-certinfo_linux-amd64
-chmod +x cfssl-certinfo_linux-amd64
-sudo mv cfssl-certinfo_linux-amd64 /root/local/bin/cfssl-certinfo
+cd /root
+    export PATH=/root/local/bin:$PATH
+    mkdir ssl
+    cd ssl
+# 这个应该长久变量吧?
 
-export PATH=/root/local/bin:$PATH
-mkdir ssl
-cd ssl
-cfssl print-defaults config > config.json
-cfssl print-defaults csr > csr.json
+# 生成模板
+# 生成证书信息文件
+    cfssl print-defaults config > config.json
+    cfssl print-defaults csr > csr.json
+# CloudFlare 公司的一个 PKI 工具,json 生成 证书
 
-#   创建 CA
-# 创建 CA 配置文件
-vi ca-config.json
+# https://www.cnblogs.com/fanqisoft/p/10765038.html
+# 待验证
 
-# 创建 CA 证书签名请求
-cat ca-csr.json
+    #   创建 CA
+    # 创建 CA 配置文件
+    ca-config.json
 
-# 生成 CA 证书和私钥
+    # 创建 CA 证书签名请求
+    ca-csr.json
+
+    # 生成 CA 证书和私钥
 cfssl gencert -initca ca-csr.json | cfssljson -bare ca
 
-#   分发证书
-sudo mkdir -p /etc/kubernetes/ssl
-sudo cp ca* /etc/kubernetes/ssl
-scp ca* root@10.66.3.86:/etc/kubernetes/ssl
-scp ca* root@10.64.3.8:/etc/kubernetes/ssl
+    #   分发证书
+    sudo mkdir -p /etc/kubernetes/ssl
+
+    sudo cp ca* /etc/kubernetes/ssl
+    scp ca* root@10.66.3.86:/etc/kubernetes/ssl
+    scp ca* root@10.64.3.8:/etc/kubernetes/ssl
+
+    ll /etc/kubernetes/ssl
 
 #   校验证书
-# 目前应该尚未生成,回头再验证
+    # 目前应该尚未生成,回头再验证
 
-#     使用 openssl 命令
-openssl x509  -noout -text -in  kubernetes.pem
+    #     使用 openssl 命令
+    cd /etc/kubernetes/ssl/
+    openssl x509 -noout -text -in kubernetes.pem
+    # 过期 kubernetes.pem
 
-#     使用 cfssl-certinfo 命令
-cfssl-certinfo -cert kubernetes.pem
+    #     使用 cfssl-certinfo 命令
+    cfssl-certinfo -cert kubernetes.pem
 
+# 确认 Issuer 字段的内容和 ca-csr.json 一致；
+# 确认 Subject 字段的内容和 kubernetes-csr.json 一致；
+# 确认 X509v3 Subject Alternative Name 字段的内容和 kubernetes-csr.json 一致；
+# 确认 X509v3 Key Usage、Extended Key Usage 字段的内容和 ca-config.json 中 kubernetes profile 一致
 
 
 

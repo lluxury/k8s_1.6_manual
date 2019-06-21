@@ -19,3 +19,12 @@ docker-17.04.0-ce.tgz
 // 配置文件
 /root/local/bin/environment.sh
 
+// ca
+ca-config.json
+ca-csr.json
+
+ca.csr
+ca-key.pem
+ca.pem
+
+
