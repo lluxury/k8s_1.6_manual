@@ -48,4 +48,18 @@ flanneld.pem
 
 flanneld.service
 
+
+
+kube-apiserver
+kube-controller-manager
+kube-scheduler
+kubectl
+kube-proxy
+kubelet
+
+kubernetes.csr  
+kubernetes-key.pem  
+kubernetes.pem
+
+
 // 最后会做一个文件大纲
