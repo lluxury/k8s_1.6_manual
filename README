@@ -383,108 +383,108 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
 
 
 
-# 部署 Master 节点
-#   使用的变量
-export MASTER_IP=10.64.3.7
-source /root/local/bin/environment.sh
+    # 部署 Master 节点
+    #   使用的变量
+    export MASTER_IP=10.64.3.7
+    source /root/local/bin/environment.sh
 
-#   下载最新版本的二进制文件,下面一种好一点
+    #   下载最新版本的二进制文件,下面一种好一点
 
-wget https://github.com/kubernetes/kubernetes/releases/download/v1.6.2/kubernetes.tar.gz
+    wget https://github.com/kubernetes/kubernetes/releases/download/v1.6.2/kubernetes.tar.gz
 
-tar -xzvf kubernetes.tar.gz
-cd kubernetes
-./cluster/get-kube-binaries.sh
-# 先布一台, 从googleapis下载
+    tar -xzvf kubernetes.tar.gz
+    cd kubernetes
+    ./cluster/get-kube-binaries.sh
+    # 先布一台, 从googleapis下载
 
-# https://github.com/kubernetes/kubernetes/releases
-# https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG.md
+    # https://github.com/kubernetes/kubernetes/releases
+    # https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG.md
 
-# # wget https://dl.k8s.io/v1.6.2/kubernetes-client-linux-amd64.tar.gz
-wget https://dl.k8s.io/v1.6.2/kubernetes-server-linux-amd64.tar.gz
-# tar -xzvf kubernetes-server-linux-amd64.tar.gz
-# cd kubernetes
-# tar -xzvf  kubernetes-src.tar.gz
-# 要解压下载下来的server包
+    # # wget https://dl.k8s.io/v1.6.2/kubernetes-client-linux-amd64.tar.gz
+    wget https://dl.k8s.io/v1.6.2/kubernetes-server-linux-amd64.tar.gz
+    # tar -xzvf kubernetes-server-linux-amd64.tar.gz
+    # cd kubernetes
+    # tar -xzvf  kubernetes-src.tar.gz
+    # 要解压下载下来的server包
 
-sudo cp -r server/bin/{kube-apiserver,kube-controller-manager,kube-scheduler,kubectl,kube-proxy,kubelet} /root/local/bin/
+    sudo cp -r server/bin/{kube-apiserver,kube-controller-manager,kube-scheduler,kubectl,kube-proxy,kubelet} /root/local/bin/
 
-# 没有文件
+    # 没有文件
 
-#   安装和配置 flanneld
-#   创建 kubernetes 证书
-cd ~/ssl
-kubernetes-csr.json
+    #   安装和配置 flanneld
+    #   创建 kubernetes 证书
+    cd ~/ssl
+    kubernetes-csr.json
 
-firewall-cmd --zone=public --add-port=6443/tcp --permanent
-firewall-cmd --reload
+    firewall-cmd --zone=public --add-port=6443/tcp --permanent
+    firewall-cmd --reload
 
-# kubectl get svc kubernetes 后期
+    # kubectl get svc kubernetes 后期
 
-cfssl gencert -ca=/etc/kubernetes/ssl/ca.pem \
--ca-key=/etc/kubernetes/ssl/ca-key.pem \
--config=/etc/kubernetes/ssl/ca-config.json \
--profile=kubernetes kubernetes-csr.json | cfssljson -bare kubernetes
+    cfssl gencert -ca=/etc/kubernetes/ssl/ca.pem \
+    -ca-key=/etc/kubernetes/ssl/ca-key.pem \
+    -config=/etc/kubernetes/ssl/ca-config.json \
+    -profile=kubernetes kubernetes-csr.json | cfssljson -bare kubernetes
 
-ls kubernetes*
-sudo mkdir -p /etc/kubernetes/ssl/
-sudo mv kubernetes*.pem /etc/kubernetes/ssl/
-rm kubernetes.csr  kubernetes-csr.json
-
-
-#   配置和启动 kube-apiserver
-
-# kubelet 首次启动时向 kube-apiserver 发送 TLS Bootstrapping 请求
-# kube-apiserver 验证 kubelet 请求中的 token 是否与它配置的 token.csv 一致，
-# 如果一致则自动为 kubelet生成证书和秘钥
-
-#     创建 kube-apiserver 使用的客户端 token 文件
-cat > token.csv <<EOF
-${BOOTSTRAP_TOKEN},kubelet-bootstrap,10001,"system:kubelet-bootstrap"
-EOF
-
-mv token.csv /etc/kubernetes/
-#     创建 kube-apiserver 的 systemd unit 文件
-
-kube-apiserver.service
-#     启动 kube-apiserver
-sudo cp kube-apiserver.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable kube-apiserver
-sudo systemctl start kube-apiserver
-sudo systemctl status kube-apiserver
+    ls kubernetes*
+    sudo mkdir -p /etc/kubernetes/ssl/
+    sudo mv kubernetes*.pem /etc/kubernetes/ssl/
+    rm kubernetes.csr  kubernetes-csr.json
 
 
-# 如果使用了 kubelet TLS Boostrap 机制，
-# 则不能再指定 --kubelet-certificate-authority、--kubelet-client-certificate 和 --kubelet-client-key 选项，
-# 否则后续 kube-apiserver 校验 kubelet 证书时出现 ”x509: certificate signed by unknown authority“ 错误；
-# 不是很明白
+    #   配置和启动 kube-apiserver
+
+    # kubelet 首次启动时向 kube-apiserver 发送 TLS Bootstrapping 请求
+    # kube-apiserver 验证 kubelet 请求中的 token 是否与它配置的 token.csv 一致，
+    # 如果一致则自动为 kubelet生成证书和秘钥
+
+    #     创建 kube-apiserver 使用的客户端 token 文件
+    cat > token.csv <<EOF
+    ${BOOTSTRAP_TOKEN},kubelet-bootstrap,10001,"system:kubelet-bootstrap"
+    EOF
+
+    mv token.csv /etc/kubernetes/
+    #     创建 kube-apiserver 的 systemd unit 文件
+
+    kube-apiserver.service
+    #     启动 kube-apiserver
+    sudo cp kube-apiserver.service /etc/systemd/system/
+    sudo systemctl daemon-reload
+    sudo systemctl enable kube-apiserver
+    sudo systemctl start kube-apiserver
+    sudo systemctl status kube-apiserver
+
+
+    # 如果使用了 kubelet TLS Boostrap 机制，
+    # 则不能再指定 --kubelet-certificate-authority、--kubelet-client-certificate 和 --kubelet-client-key 选项，
+    # 否则后续 kube-apiserver 校验 kubelet 证书时出现 ”x509: certificate signed by unknown authority“ 错误；
+    # 不是很明白
 
 
 
-#   配置和启动 kube-controller-manager
-#     创建 kube-controller-manager 的 systemd unit 文件
-kube-controller-manager.service
-# kubectl get componentstatuses
+    #   配置和启动 kube-controller-manager
+    #     创建 kube-controller-manager 的 systemd unit 文件
+    kube-controller-manager.service
+    # kubectl get componentstatuses
 
-#     启动 kube-controller-manager
-sudo cp kube-controller-manager.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable kube-controller-manager
-sudo systemctl start kube-controller-manager
+    #     启动 kube-controller-manager
+    sudo cp kube-controller-manager.service /etc/systemd/system/
+    sudo systemctl daemon-reload
+    sudo systemctl enable kube-controller-manager
+    sudo systemctl start kube-controller-manager
 
-#   配置和启动 kube-scheduler
-#     创建 kube-scheduler 的 systemd unit 文件
-kube-scheduler.service
+    #   配置和启动 kube-scheduler
+    #     创建 kube-scheduler 的 systemd unit 文件
+    kube-scheduler.service
 
-#     启动 kube-scheduler
-sudo cp kube-scheduler.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable kube-scheduler
-sudo systemctl start kube-scheduler
+    #     启动 kube-scheduler
+    sudo cp kube-scheduler.service /etc/systemd/system/
+    sudo systemctl daemon-reload
+    sudo systemctl enable kube-scheduler
+    sudo systemctl start kube-scheduler
 
-#   验证 master 节点功能
-kubectl get componentstatuses
+    #   验证 master 节点功能
+    kubectl get componentstatuses
 
 
 
@@ -510,16 +510,31 @@ source /root/local/bin/environment.sh
 #     下载最新的 docker 二进制文件
 # wget https://get.docker.com/builds/Linux/x86_64/docker-17.04.0-ce.tgz
 scp docker-17.04.0-ce.tgz root@10.64.3.8:
+
 tar -xvf docker-17.04.0-ce.tgz
 cp docker/docker* /root/local/bin
 cp docker/completion/bash/docker /etc/bash_completion.d/
+
+# dockerd 运行时会调用其它 docker 命令，如 docker-proxy，所以需要将 docker 命令所在的目录加到 PATH 环境变量中；
+
+# flanneld 启动时将网络配置写入到 /run/flannel/docker 文件中的变量 DOCKER_NETWORK_OPTIONS，dockerd 命令行上指定该变量值来设置 docker0 网桥参数；
+
+# 如果指定了多个 EnvironmentFile 选项，则必须将 /run/flannel/docker 放在最后(确保 docker0 使用 flanneld 生成的 bip 参数)；
+
+# 不能关闭默认开启的 --iptables 和 --ip-masq 选项；
+
+# 如果内核版本比较新，建议使用 overlay 存储驱动
+
 
 #     创建 docker 的 systemd unit 文件
 cd ~
 docker.service
 sudo iptables -P FORWARD ACCEPT
+
 vi /etc/rc.local
   sleep 60 && /sbin/iptables -P FORWARD ACCEPT
+
+# 防火墙的配置先,放一下回头补充,注意要处理3台
 
 mkdir /etc/docker/
 cd !$
@@ -544,13 +559,16 @@ sudo systemctl start docker
 #     检查 docker 服务
 docker version
 
-#   安装和配置 kubelet 1台
-kubectl create clusterrolebinding kubelet-bootstrap --clusterrole=system:node-bootstrapper --user=kubelet-bootstrap
+# kubelet 启动时向 kube-apiserver 发送 TLS bootstrapping 请求，
+# 需要先将 bootstrap token 文件中的 kubelet-bootstrap 用户赋予 system:node-bootstrapper 角色，
+# 然后 kubelet 才有权限创建认证请求(certificatesigningrequests)
+
+
 
 # #     下载最新的 kubelet 和 kube-proxy 二进制文件 master已有
 # wget https://dl.k8s.io/v1.6.2/kubernetes-server-linux-amd64.tar.gz
 # tar -xzvf kubernetes-server-linux-amd64.tar.gz
-cd kubernetes
+# cd kubernetes
 cd /root/kubernetes/server/kubernetes
 # 从master上copy
 # tar -xzvf  kubernetes-src.tar.gz
@@ -559,6 +577,11 @@ sudo cp -r ./server/bin/{kube-proxy,kubelet} /root/local/bin/
 #     创建 kubelet bootstrapping kubeconfig 文件
 # 感觉也不需要每台都设,待确认
 # 应该是要的,对服务设的
+
+# --embed-certs 为 true 时表示将 certificate-authority 证书写入到生成的 bootstrap.kubeconfig 文件中；
+# 设置 kubelet 客户端认证参数时没有指定秘钥和证书，后续由 kube-apiserver 自动生成
+
+cd /root
 
 # 设置集群参数
 kubectl config set-cluster kubernetes \
@@ -582,7 +605,17 @@ kubectl config set-context default \
 kubectl config use-context default --kubeconfig=bootstrap.kubeconfig
 mv bootstrap.kubeconfig /etc/kubernetes/
 
+# 理论上只要做一次,后面尝试,不能用再添加
+
 #     创建 kubelet 的 systemd unit 文件
+# --address 不能设置为 127.0.0.1，否则后续 Pods 访问 kubelet 的 API 接口时会失败，因为 Pods 访问的 127.0.0.1 指向自己而不是 kubelet；
+# 如果设置了 --hostname-override 选项，则 kube-proxy 也需要设置该选项，否则会出现找不到 Node 的情况；
+# --experimental-bootstrap-kubeconfig 指向 bootstrap kubeconfig 文件，kubelet 使用该文件中的用户名和 token 向 kube-apiserver 发送 TLS Bootstrapping 请求；
+# 管理员通过了 CSR 请求后，kubelet 自动在 --cert-dir 目录创建证书和私钥文件(kubelet-client.crt 和 kubelet-client.key)，然后写入 --kubeconfig 文件(自动创建 --kubeconfig 指定的文件)；
+# 建议在 --kubeconfig 配置文件中指定 kube-apiserver 地址，如果未指定 --api-servers 选项，则必须指定 --require-kubeconfig 选项后才从配置文件中读取 kue-apiserver 的地址，否则 kubelet 启动后将找不到 kube-apiserver (日志中提示未找到 API Server），kubectl get nodes 不会返回对应的 Node 信息;
+# --cluster-dns 指定 kubedns 的 Service IP(可以先分配，后续创建 kubedns 服务时指定该 IP)，--cluster-domain 指定域名后缀，这两个参数同时指定后才会生效；
+# kubelet cAdvisor 默认在所有接口监听 4194 端口的请求，对于有外网的机器来说不安全，ExecStartPost 选项指定的 iptables 规则只允许内网机器访问 4194 端口；
+
 sudo mkdir /var/lib/kubelet 
 kubelet.service
 
@@ -593,19 +626,29 @@ sudo systemctl enable kubelet
 sudo systemctl start kubelet
 systemctl status kubelet
 
+
+#   安装和配置 kubelet 1台?
+kubectl create clusterrolebinding kubelet-bootstrap --clusterrole=system:node-bootstrapper --user=kubelet-bootstrap
+# --user=kubelet-bootstrap 是文件 /etc/kubernetes/token.csv 中指定的用户名，同时也写入了文件 /etc/kubernetes/bootstrap.kubeconfig
+
+# 不知道是一台还是多台
+
 #     通过 kubelet 的 TLS 证书请求
-# 查看未授权的 CSR 请求
+# 查看未授权的 CSR 请求及节点
+
 kubectl get csr
 kubectl get nodes
 
-kubectl certificate approve csr-k8kfj
+kubectl certificate approve csr-x27td
 
 ls -l /etc/kubernetes/kubelet.kubeconfig
 ls -l /etc/kubernetes/ssl/kubelet*
 
+kubectl get nodes
 
 #   配置 kube-proxy
 #     创建 kube-proxy 证书
+cd /root/ssl
 kube-proxy-csr.json
 
  cfssl gencert -ca=/etc/kubernetes/ssl/ca.pem \
@@ -616,6 +659,11 @@ kube-proxy-csr.json
  ls kube-proxy*
  sudo mv kube-proxy*.pem /etc/kubernetes/ssl/
  rm kube-proxy.csr  kube-proxy-csr.json
+
+# CN 指定该证书的 User 为 system:kube-proxy；
+# kube-apiserver 预定义的 RoleBinding system:node-proxier 将User system:kube-proxy 与 Role system:node-proxier 绑定，该 Role 授予了调用 kube-apiserver Proxy 相关 API 的权限；
+# hosts 属性值为空列表；
+
 
 #     创建 kube-proxy kubeconfig 文件
 # 设置集群参数
@@ -642,9 +690,18 @@ kubectl config set-context default \
 kubectl config use-context default --kubeconfig=kube-proxy.kubeconfig
 mv kube-proxy.kubeconfig /etc/kubernetes/
 
+# 设置集群参数和客户端认证参数时 --embed-certs 都为 true，这会将 certificate-authority、client-certificate 和 client-key 指向的证书文件内容写入到生成的 kube-proxy.kubeconfig 文件中；
+# kube-proxy.pem 证书中 CN 为 system:kube-proxy，kube-apiserver 预定义的 RoleBinding cluster-admin 将User system:kube-proxy 与 Role system:node-proxier 绑定，该 Role 授予了调用 kube-apiserver Proxy 相关 API 的权限
+
 #     创建 kube-proxy 的 systemd unit 文件
 sudo mkdir -p /var/lib/kube-proxy 
 kube-proxy.service
+
+# --hostname-override 参数值必须与 kubelet 的值一致，否则 kube-proxy 启动后会找不到该 Node，从而不会创建任何 iptables 规则；
+# --cluster-cidr 必须与 kube-controller-manager 的 --cluster-cidr 选项值一致；
+# kube-proxy 根据 --cluster-cidr 判断集群内部和外部流量，指定 --cluster-cidr 或 --masquerade-all 选项后 kube-proxy 才会对访问 Service IP 的请求做 SNAT；
+# --kubeconfig 指定的配置文件嵌入了 kube-apiserver 的地址、用户名、证书、秘钥等请求和认证信息；
+# 预定义的 RoleBinding cluster-admin 将User system:kube-proxy 与 Role system:node-proxier 绑定，该 Role 授予了调用 kube-apiserver Proxy 相关 API 的权限；
 
 #     启动 kube-proxy
 sudo cp kube-proxy.service /etc/systemd/system/
@@ -655,23 +712,27 @@ systemctl status kube-proxy
 
 #   验证集群功能
 nginx-ds.yml
-
+kubectl create -f nginx-ds.yml
 
 #     检查节点状态
 kubectl get nodes
 
 #     检查各 Node 上的 Pod IP 连通性
 kubectl get pods  -o wide|grep nginx-ds
-# nginx-ds-6ktz8              1/1       Running            0          5m        172.30.25.19   10.64.3.7
-# 结果ip不对,应该是网络还有问题
 
 #     检查服务 IP 和端口可达性
 kubectl get svc |grep nginx-ds
+# nginx-ds     10.254.64.28   <nodes>       80:8489/TCP   9m
+
+
  curl 10.254.136.178 # `kubectl get svc |grep nginx-ds` 输出中的服务 IP
 
 #     检查服务的 NodePort 可达性
 export NODE_IP=10.64.3.7 # 当前 Node 的 IP
-export NODE_PORT=8744 # `kubectl get svc |grep nginx-ds` 输出中 80 端口映射的 NodePort
+export NODE_PORT=8744 
+
+# 上文 svc 输出中 80 端口映射的 NodePort
+
 curl ${NODE_IP}:${NODE_PORT}
 # ok
 

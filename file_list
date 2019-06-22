@@ -61,5 +61,22 @@ kubernetes.csr
 kubernetes-key.pem  
 kubernetes.pem
 
+docker.service
+
+kube-proxy
+kubelet
+
+kubelet.service
+
+-rw------- 1 root root 2276 Jun 23 01:01 /etc/kubernetes/kubelet.kubeconfig
+
+-rw-r--r-- 1 root root 1042 Jun 23 01:01 /etc/kubernetes/ssl/kubelet-client.crt
+-rw------- 1 root root  227 Jun 23 00:54 /etc/kubernetes/ssl/kubelet-client.key
+-rw-r--r-- 1 root root 1103 Jun 23 01:01 /etc/kubernetes/ssl/kubelet.crt
+-rw------- 1 root root 1675 Jun 23 01:01 /etc/kubernetes/ssl/kubelet.key
+
+kube-proxy.kubeconfig
+
+nginx-ds.yml
 
 // 最后会做一个文件大纲
