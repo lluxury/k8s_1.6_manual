@@ -187,80 +187,81 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
 
 
 # 下载和配置 Kubectl 命令行工具
-# kubectl 默认从 ~/.kube/config 配置文件获取访问 kube-apiserver 地址、证书、用户名等信息
+    # kubectl 默认从 ~/.kube/config 配置文件获取访问 kube-apiserver 地址、证书、用户名等信息
 
-# 需要将下载的 kubectl 二进制程序和生成的 ~/.kube/config 配置文件拷贝到所有使用 kubectl 命令的机器
-# 这样看来,配置应该是拷贝的,不知道证书怎么做,只要一个,还是分别生成?防火墙
+    # 需要将下载的 kubectl 二进制程序和生成的 ~/.kube/config 配置文件拷贝到所有使用 kubectl 命令的机器
+    # 这样看来,配置应该是拷贝的,不知道证书怎么做,只要一个,还是分别生成?防火墙
 
-#   使用的变量
-export MASTER_IP=10.64.3.7
-export KUBE_APISERVER="https://${MASTER_IP}:6443"
+    #   使用的变量
+    export MASTER_IP=10.64.3.7
+    export KUBE_APISERVER="https://${MASTER_IP}:6443"
 
-#   下载 kubectl x3
-# wget https://dl.k8s.io/v1.6.2/kubernetes-client-linux-amd64.tar.gz
+    #   下载 kubectl x3
+    # wget https://dl.k8s.io/v1.6.2/kubernetes-client-linux-amd64.tar.gz
 
-cd /root
-scp root@10.64.3.7:/root/kubernetes-client-linux-amd64.tar.gz .
+    cd /root
+    scp root@10.64.3.7:/root/kubernetes-client-linux-amd64.tar.gz .
 
-tar -xzvf kubernetes-client-linux-amd64.tar.gz
-sudo cp kubernetes/client/bin/kube* /root/local/bin/
-chmod a+x /root/local/bin/kube*
-export PATH=/root/local/bin:$PATH
+    tar -xzvf kubernetes-client-linux-amd64.tar.gz
+    sudo cp kubernetes/client/bin/kube* /root/local/bin/
+    chmod a+x /root/local/bin/kube*
+    export PATH=/root/local/bin:$PATH
 
-#   创建 admin 证书
-cd ssl
-admin-csr.json
+    #   创建 admin 证书
+    cd ssl
+    admin-csr.json
 
-cfssl gencert -ca=/etc/kubernetes/ssl/ca.pem \
-  -ca-key=/etc/kubernetes/ssl/ca-key.pem \
-  -config=/etc/kubernetes/ssl/ca-config.json \
-  -profile=kubernetes admin-csr.json | cfssljson -bare admin
+    cfssl gencert -ca=/etc/kubernetes/ssl/ca.pem \
+      -ca-key=/etc/kubernetes/ssl/ca-key.pem \
+      -config=/etc/kubernetes/ssl/ca-config.json \
+      -profile=kubernetes admin-csr.json | cfssljson -bare admin
 
-ls admin*
-sudo mv admin*.pem /etc/kubernetes/ssl/
-rm admin.csr admin-csr.json
+    ls admin*
+    sudo mv admin*.pem /etc/kubernetes/ssl/
+    rm admin.csr admin-csr.json
 
-#   创建 kubectl kubeconfig 文件
-# 设置集群参数
-kubectl config set-cluster kubernetes \
---certificate-authority=/etc/kubernetes/ssl/ca.pem \
---embed-certs=true \
---server=${KUBE_APISERVER}
+    #   创建 kubectl kubeconfig 文件
+    # 设置集群参数
+    kubectl config set-cluster kubernetes \
+    --certificate-authority=/etc/kubernetes/ssl/ca.pem \
+    --embed-certs=true \
+    --server=${KUBE_APISERVER}
 
-# 设置客户端认证参数
-kubectl config set-credentials admin \
---client-certificate=/etc/kubernetes/ssl/admin.pem \
---embed-certs=true \
---client-key=/etc/kubernetes/ssl/admin-key.pem
+    # 设置客户端认证参数
+    kubectl config set-credentials admin \
+    --client-certificate=/etc/kubernetes/ssl/admin.pem \
+    --embed-certs=true \
+    --client-key=/etc/kubernetes/ssl/admin-key.pem
 
-# 设置上下文参数
-kubectl config set-context kubernetes \
---cluster=kubernetes \
---user=admin
+    # 设置上下文参数
+    kubectl config set-context kubernetes \
+    --cluster=kubernetes \
+    --user=admin
 
-# 设置默认上下文
-kubectl config use-context kubernetes
+    # 设置默认上下文
+    kubectl config use-context kubernetes
 
-#   分发 kubeconfig 文件
-# 将 ~/.kube/config 文件拷贝到运行 kubelet 命令的机器的 ~/.kube/ 目录下
+    #   分发 kubeconfig 文件
+    # 将 ~/.kube/config 文件拷贝到运行 kubelet 命令的机器的 ~/.kube/ 目录下
 
-# 三段配置+激活,生成文件写有密钥
+    # 三段配置+激活,生成文件写有密钥
 
-mkdir .kube
-cd !$
-scp root@10.64.3.7:/root/.kube/config .
+    mkdir .kube
+    cd !$
+    scp root@10.64.3.7:/root/.kube/config .
 
-# kubectl api-versions 目前不可用
+    # kubectl api-versions 目前不可用
 
-# 使用 kubectl  的机器都需要
+    # 使用 kubectl  的机器都需要
 
 
 # 配置 Flannel 网络 三端都要
-kubernetes 要求集群内各节点能通过 Pod 网段互联互通，使用 Flannel 在所有节点 (Master、Node) 上创建互联互通的 Pod 网段
+# kubernetes 要求集群内各节点能通过 Pod 网段互联互通，使用 Flannel 在所有节点 (Master、Node) 上创建互联互通的 Pod 网段
 #   使用的变量 
 export NODE_IP=10.64.3.7
 source /root/local/bin/environment.sh
-...
+
+# 我猜是只需要在在一台机器上操作,后续观察
 
 #   创建 TLS 秘钥和证书 
 # etcd 集群启用了双向 TLS 认证，所以需要为 flanneld 指定与 etcd 集群通信的 CA 和秘钥
@@ -278,8 +279,10 @@ flanneld-csr.json
  sudo mv flanneld*.pem /etc/flanneld/ssl
  rm flanneld.csr  flanneld-csr.json
 
+ # 证书里ip倒是没有,先分别建吧
+
 #   向 etcd 写入集群 Pod 网段信息
-只需在第一次部署 Flannel 网络时执行，后续在其它节点上部署 Flannel 时无需再写入该信息！
+# 只需在第一次部署 Flannel 网络时执行，后续在其它节点上部署 Flannel 时无需再写入该信息！
 
 /root/local/bin/etcdctl \
   --endpoints=${ETCD_ENDPOINTS} \
@@ -292,18 +295,28 @@ flanneld-csr.json
 #     下载 flanneld
 cd ~
 mkdir flannel
-wget https://github.com/coreos/flannel/releases/download/v0.7.1/flannel-v0.7.1-linux-amd64.tar.gz
+
+# wget https://github.com/coreos/flannel/releases/download/v0.7.1/flannel-v0.7.1-linux-amd64.tar.gz
+
+scp root@10.64.3.7:/root/flannel-v0.7.1-linux-amd64.tar.gz .
+
 tar -xzvf flannel-v0.7.1-linux-amd64.tar.gz -C flannel
 sudo cp flannel/{flanneld,mk-docker-opts.sh} /root/local/bin
 #     创建 flanneld 的 systemd unit 文件
+
+# 检查网络环境
+  # mk-docker-opts.sh
+  # --iface=ens33
 flanneld.service
 
-# --iface=enp0s8
 
 #     启动 flanneld
 sudo cp flanneld.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable flanneld
+
+# 集群的东西,建议还是一个一个启动好
+
 sudo systemctl start flanneld
 systemctl status flanneld
 
@@ -311,9 +324,9 @@ systemctl status flanneld
 journalctl  -u flanneld |grep 'Lease acquired'
 ifconfig flannel.1
 
-172.30.18.0/32 7
-172.30.16.0/32 8
-172.30.39.0/32 86
+172.30.95.0/32 7
+172.30.99.0/32 8
+172.30.101.0/32 86
 
 #   检查分配给各 flanneld 的 Pod 网段信息
  # 查看集群 Pod 网段(/16)
@@ -350,11 +363,14 @@ ifconfig flannel.1
   --cert-file=/etc/flanneld/ssl/flanneld.pem \
   --key-file=/etc/flanneld/ssl/flanneld-key.pem \
   ls ${FLANNEL_ETCD_PREFIX}/subnets
-# /kubernetes/network/subnets/172.30.19.0-24
-# /kubernetes/network/subnets/172.30.20.0-24
-# /kubernetes/network/subnets/172.30.21.0-24
+# /kubernetes/network/subnets/172.30.99.0-24
+# /kubernetes/network/subnets/172.30.101.0-24
+# /kubernetes/network/subnets/172.30.95.0-24
 
-iptables -A FORWARD -s 172.30.0.0/16 -j ACCEPT
+
+# iptables -A FORWARD -s 172.30.0.0/16 -j ACCEPT
+# firewall-cmd --add-rich-rule="rule family='ipv4' source address='172.30.0.0/16' accept"
+# 两边都没有说明,先不开防火墙吧
 # ping 172.30.18.1
 # ping 172.30.16.2
 # ping 172.30.39.3

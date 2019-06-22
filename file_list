@@ -31,6 +31,8 @@ etcd.csr
 etcd-key.pem
 etcd.pem
 
+etcd.service
+
 kubectl
 kubefed
 
@@ -40,3 +42,10 @@ admin.pem
 
 ~/.kube/config
 
+flanneld.csr  
+flanneld-key.pem  
+flanneld.pem
+
+flanneld.service
+
+// 最后会做一个文件大纲
