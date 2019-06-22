@@ -21,7 +21,9 @@
     # x3 
 
     # 创建 CA 证书和秘钥
-    # 3台都要
+
+yum -y install ntp && ntpdate -u cn.pool.ntp.org
+
     #   安装 CFSSL
     yum install wget -y
     wget https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
@@ -139,53 +141,56 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
 
     etcd-csr.json 
 
-# 生成 etcd 证书和私钥
-cfssl gencert -ca=/etc/kubernetes/ssl/ca.pem \
--ca-key=/etc/kubernetes/ssl/ca-key.pem \
--config=/etc/kubernetes/ssl/ca-config.json \
--profile=kubernetes etcd-csr.json | cfssljson -bare etcd
+    # 生成 etcd 证书和私钥
+    cfssl gencert -ca=/etc/kubernetes/ssl/ca.pem \
+    -ca-key=/etc/kubernetes/ssl/ca-key.pem \
+    -config=/etc/kubernetes/ssl/ca-config.json \
+    -profile=kubernetes etcd-csr.json | cfssljson -bare etcd
 
-ls etcd*
+    ls etcd*
 
-# 这里生成了3套证书
-# kubernetes 和 etcd 证书中包含有使用该证书的 IP，所以需要对各节点分别生成，不能共享
+    # 这里生成了3套证书
+    # kubernetes 和 etcd 证书中包含有使用该证书的 IP，所以需要对各节点分别生成，不能共享
 
-sudo mkdir -p /etc/etcd/ssl
-sudo mv etcd*.pem /etc/etcd/ssl
-rm etcd.csr  etcd-csr.json
+    sudo mkdir -p /etc/etcd/ssl
+    sudo mv etcd*.pem /etc/etcd/ssl
+    rm etcd.csr  etcd-csr.json
 
-#   创建 etcd 的 systemd unit 文件
-sudo mkdir -p /var/lib/etcd 
-etcd.service
+    #   创建 etcd 的 systemd unit 文件
+    sudo mkdir -p /var/lib/etcd 
+    etcd.service
 
-#   启动 etcd 服务
-firewall-cmd --zone=public --add-port=2379/tcp --permanent
-firewall-cmd --zone=public --add-port=2380/tcp --permanent
-firewall-cmd --reload
+    #   启动 etcd 服务
+    firewall-cmd --zone=public --add-port=2379/tcp --permanent
+    firewall-cmd --zone=public --add-port=2380/tcp --permanent
+    firewall-cmd --reload
 
-# 注意这里要线性操作,一台好了再做一台
+    # 注意这里要线性操作,一台好了再做一台
 
-sudo mv etcd.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable etcd
+    sudo mv etcd.service /etc/systemd/system/
+    sudo systemctl daemon-reload
+    sudo systemctl enable etcd
 
-sudo systemctl start etcd
-systemctl status etcd
+    sudo systemctl start etcd
+    systemctl status etcd
 
-#   验证服务
-for ip in ${NODE_IPS}; do
-  ETCDCTL_API=3 /root/local/bin/etcdctl \
-  --endpoints=https://${ip}:2379  \
-  --cacert=/etc/kubernetes/ssl/ca.pem \
-  --cert=/etc/etcd/ssl/etcd.pem \
-  --key=/etc/etcd/ssl/etcd-key.pem \
-  endpoint health; done
+    #   验证服务
+    for ip in ${NODE_IPS}; do
+      ETCDCTL_API=3 /root/local/bin/etcdctl \
+      --endpoints=https://${ip}:2379  \
+      --cacert=/etc/kubernetes/ssl/ca.pem \
+      --cert=/etc/etcd/ssl/etcd.pem \
+      --key=/etc/etcd/ssl/etcd-key.pem \
+      endpoint health; done
 
-# date -s "2019-06-21 18:44:22"
+
 
 
 # 下载和配置 Kubectl 命令行工具
+# kubectl 默认从 ~/.kube/config 配置文件获取访问 kube-apiserver 地址、证书、用户名等信息
+
 # 需要将下载的 kubectl 二进制程序和生成的 ~/.kube/config 配置文件拷贝到所有使用 kubectl 命令的机器
+# 这样看来,配置应该是拷贝的,不知道证书怎么做,只要一个,还是分别生成?防火墙
 
 #   使用的变量
 export MASTER_IP=10.64.3.7
@@ -193,8 +198,9 @@ export KUBE_APISERVER="https://${MASTER_IP}:6443"
 
 #   下载 kubectl x3
 # wget https://dl.k8s.io/v1.6.2/kubernetes-client-linux-amd64.tar.gz
-scp kubernetes-client-linux-amd64.tar.gz root@10.64.3.8
-...
+
+cd /root
+scp root@10.64.3.7:/root/kubernetes-client-linux-amd64.tar.gz .
 
 tar -xzvf kubernetes-client-linux-amd64.tar.gz
 sudo cp kubernetes/client/bin/kube* /root/local/bin/
@@ -237,10 +243,16 @@ kubectl config use-context kubernetes
 
 #   分发 kubeconfig 文件
 # 将 ~/.kube/config 文件拷贝到运行 kubelet 命令的机器的 ~/.kube/ 目录下
-mkdir .kube
-scp .kube/config root@10.64.3.8:.kube/
-...
 
+# 三段配置+激活,生成文件写有密钥
+
+mkdir .kube
+cd !$
+scp root@10.64.3.7:/root/.kube/config .
+
+# kubectl api-versions 目前不可用
+
+# 使用 kubectl  的机器都需要
 
 
 # 配置 Flannel 网络 三端都要

@@ -27,4 +27,16 @@ ca.csr
 ca-key.pem
 ca.pem
 
+etcd.csr
+etcd-key.pem
+etcd.pem
+
+kubectl
+kubefed
+
+admin-csr.json  
+admin-key.pem   
+admin.pem
+
+~/.kube/config
 
