@@ -79,4 +79,12 @@ kube-proxy.kubeconfig
 
 nginx-ds.yml
 
-// 最后会做一个文件大纲
+kubedns-svc.yaml
+kubedns-controller.yaml
+my-nginx
+pod-nginx
+
+dashboard-controller.yaml  
+dashboard-rbac.yaml  
+dashboard-service.yaml
+

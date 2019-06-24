@@ -825,49 +825,69 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
     # 进入docker中, 测试dns, 结果失败,端口没开,怀疑镜像不行了
     # 如何查看镜像及docker日志?
     # pods没起来
-
+# NAME                   DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+# kube-dns               1         0         0            0           2h
 
 # 部署 Dashboard 插件
-cd /root/kubernetes/cluster/addons/dashboard
-# 定义一个名为 dashboard 的 ServiceAccount，然后将它和 Cluster Role view 绑定
+    cd /root/kubernetes/cluster/addons/dashboard
+    # 定义一个名为 dashboard 的 ServiceAccount，然后将它和 Cluster Role view 绑定
 
-#   配置dashboard-service
-# diff dashboard-service.yaml.orig dashboard-service.yaml
+    #   配置dashboard-service
+    # diff dashboard-service.yaml.orig dashboard-service.yaml
 
-#   配置dashboard-controller
+    dashboard-controller.yaml   
+    # 添加 serviceAccountName: dashboard
+    # 更换image
 
-#   执行所有定义文件
-mkdir -p /root/kubernetes/cluster/addons/dashboard
-mv dashboard-*  /root/kubernetes/cluster/addons/dashboard
-cd !$
-kubectl create -f  .
+    dashboard-rbac.yaml
+    # 新建,解决rbac认证
 
-#   检查执行结果
-kubectl get services kubernetes-dashboard -n kube-system
-# kubernetes-dashboard   10.254.120.253   <nodes>       80:8749/TCP   39s
-NodePort 8749映射到 dashboard pod 80端口
+    dashboard-service.yaml
+    # 指定端口类型为 NodePort
 
-kubectl get deployment kubernetes-dashboard  -n kube-system
-kubectl get pods  -n kube-system | grep dashboard
+    #   配置dashboard-controller
 
-#   访问dashboard
-#   通过 kubectl proxy 用新窗口访问 dashboard
-kubectl proxy --address='10.64.3.7' --port=8086 --accept-hosts='^*$'
-# Starting to serve on 10.64.3.7:8086
+    #   执行所有定义文件
+    mkdir -p /root/kubernetes/cluster/addons/dashboard
+    mv dashboard-*  /root/kubernetes/cluster/addons/dashboard
+    cd !$
+    kubectl create -f  .
 
-http://10.64.3.7:8086/ui
-# 服务不可用
-# 路径没有写入profile
+    # deployment "kubernetes-dashboard" created
+    # serviceaccount "dashboard" created
+    # clusterrolebinding "dashboard" created
+    # service "kubernetes-dashboard" created
 
-#   通过 kube-apiserver 访问dashboard
-kubectl cluster-info
-http://10.64.3.7:8080/api/v1/proxy/namespaces/kube-system/services/kubernetes-dashboard
-# User "system:anonymous" cannot proxy services in the namespace "kube-system".
-openssl pkcs12 -export -in admin.pem  -out admin.p12 -inkey admin-key.pem
-# 失败,无法查看
-kubectl describe pods kubernetes-dashboard-3677875397-lp5hv --namespace=kube-system
- # restart the nodes. (vagrant halt && vagrant up) restarting all minions
 
+    #   检查执行结果
+    kubectl get services kubernetes-dashboard -n kube-system
+    # kubernetes-dashboard   10.254.120.253   <nodes>       80:8749/TCP   39s
+    # NodePort 8749映射到 dashboard pod 80端口
+
+    kubectl get deployment kubernetes-dashboard  -n kube-system
+    kubectl get pods  -n kube-system | grep dashboard
+
+    #   访问dashboard
+    #   通过 kubectl proxy 用新窗口访问 dashboard
+    kubectl proxy --address='10.64.3.7' --port=8086 --accept-hosts='^*$'
+    # Starting to serve on 10.64.3.7:8086
+    # --accept-hosts 必须 否则Unauthorized
+
+    http://10.64.3.7:8086/ui
+    # 成功, 需要保持 proxy 程序开启
+
+
+    #   通过 kube-apiserver 访问dashboard
+    kubectl cluster-info
+    http://10.64.3.7:8080/api/v1/proxy/namespaces/kube-system/services/kubernetes-dashboard
+    # 成功
+
+    openssl pkcs12 -export -in admin.pem  -out admin.p12 -inkey admin-key.pem
+    # 失败,无法查看
+    kubectl describe pods kubernetes-dashboard-3677875397-lp5hv --namespace=kube-system
+     # restart the nodes. (vagrant halt && vagrant up) restarting all minions
+
+    # 缺少 Heapster 插件，当前 dashboard 不能展示 Pod、Nodes 的 CPU、内存等 metric 图形
 
 
 
