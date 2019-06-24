@@ -498,314 +498,337 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
     export NODE_IP=10.64.3.7
     source /root/local/bin/environment.sh
 
-# 第二台
-# 替换为 kubernetes master 集群任一机器 IP
-export MASTER_IP=10.64.3.7
-export KUBE_APISERVER="https://${MASTER_IP}:6443"
-export NODE_IP=10.64.3.8
-source /root/local/bin/environment.sh
+    # 第二台
+    # 替换为 kubernetes master 集群任一机器 IP
+    export MASTER_IP=10.64.3.7
+    export KUBE_APISERVER="https://${MASTER_IP}:6443"
+    export NODE_IP=10.64.3.8
+    source /root/local/bin/environment.sh
 
-#   安装和配置 flanneld
-#   安装和配置 docker
-#     下载最新的 docker 二进制文件
-# wget https://get.docker.com/builds/Linux/x86_64/docker-17.04.0-ce.tgz
+    #   安装和配置 flanneld
+    #   安装和配置 docker
+    #     下载最新的 docker 二进制文件
+    # wget https://get.docker.com/builds/Linux/x86_64/docker-17.04.0-ce.tgz
 
-scp root@10.64.3.7:/root/docker-17.04.0-ce.tgz .
+    scp root@10.64.3.7:/root/docker-17.04.0-ce.tgz .
 
-tar -xvf docker-17.04.0-ce.tgz
-cp docker/docker* /root/local/bin
-cp docker/completion/bash/docker /etc/bash_completion.d/
+    tar -xvf docker-17.04.0-ce.tgz
+    cp docker/docker* /root/local/bin
+    cp docker/completion/bash/docker /etc/bash_completion.d/
 
-# dockerd 运行时会调用其它 docker 命令，如 docker-proxy，所以需要将 docker 命令所在的目录加到 PATH 环境变量中；
+    # dockerd 运行时会调用其它 docker 命令，如 docker-proxy，所以需要将 docker 命令所在的目录加到 PATH 环境变量中；
 
-# flanneld 启动时将网络配置写入到 /run/flannel/docker 文件中的变量 DOCKER_NETWORK_OPTIONS，dockerd 命令行上指定该变量值来设置 docker0 网桥参数；
+    # flanneld 启动时将网络配置写入到 /run/flannel/docker 文件中的变量 DOCKER_NETWORK_OPTIONS，dockerd 命令行上指定该变量值来设置 docker0 网桥参数；
 
-# 如果指定了多个 EnvironmentFile 选项，则必须将 /run/flannel/docker 放在最后(确保 docker0 使用 flanneld 生成的 bip 参数)；
+    # 如果指定了多个 EnvironmentFile 选项，则必须将 /run/flannel/docker 放在最后(确保 docker0 使用 flanneld 生成的 bip 参数)；
 
-# 不能关闭默认开启的 --iptables 和 --ip-masq 选项；
+    # 不能关闭默认开启的 --iptables 和 --ip-masq 选项；
 
-# 如果内核版本比较新，建议使用 overlay 存储驱动
+    # 如果内核版本比较新，建议使用 overlay 存储驱动
 
 
-#     创建 docker 的 systemd unit 文件
-cd ~
+    #     创建 docker 的 systemd unit 文件
+    cd ~
 
-docker.service
+    docker.service
 
-sudo iptables -P FORWARD ACCEPT
+    sudo iptables -P FORWARD ACCEPT
 
-vi /etc/rc.local
-  sleep 60 && /sbin/iptables -P FORWARD ACCEPT
+    vi /etc/rc.local
+      sleep 60 && /sbin/iptables -P FORWARD ACCEPT
 
-# 防火墙的配置先,放一下回头补充,注意要处理3台
+    # 防火墙的配置先,放一下回头补充,注意要处理3台
 
-mkdir /etc/docker/
-cd !$
-cat > daemon.json <<EOF
-{
-  "registry-mirrors": ["https://docker.mirrors.ustc.edu.cn", "hub-mirror.c.163.com"],
-  "max-concurrent-downloads": 10
-}
-EOF
+    mkdir /etc/docker/
+    cd !$
+    cat > daemon.json <<EOF
+    {
+      "registry-mirrors": ["https://docker.mirrors.ustc.edu.cn", "hub-mirror.c.163.com"],
+      "max-concurrent-downloads": 10
+    }
+    EOF
 
 
-#     启动 dockerd
-cd ~
-sudo cp docker.service /etc/systemd/system/docker.service
-sudo systemctl daemon-reload
-sudo systemctl stop firewalld
-sudo systemctl disable firewalld
-sudo iptables -F && sudo iptables -X && sudo iptables -F -t nat && sudo iptables -X -t nat
-sudo systemctl enable docker
-sudo systemctl start docker
+    #     启动 dockerd
+    cd ~
+    sudo cp docker.service /etc/systemd/system/docker.service
+    sudo systemctl daemon-reload
+    sudo systemctl stop firewalld
+    sudo systemctl disable firewalld
+    sudo iptables -F && sudo iptables -X && sudo iptables -F -t nat && sudo iptables -X -t nat
+    sudo systemctl enable docker
+    sudo systemctl start docker
 
-#     检查 docker 服务
-docker version
+    #     检查 docker 服务
+    docker version
 
-# kubelet 启动时向 kube-apiserver 发送 TLS bootstrapping 请求，
-# 需要先将 bootstrap token 文件中的 kubelet-bootstrap 用户赋予 system:node-bootstrapper 角色，
-# 然后 kubelet 才有权限创建认证请求(certificatesigningrequests)
+    # kubelet 启动时向 kube-apiserver 发送 TLS bootstrapping 请求，
+    # 需要先将 bootstrap token 文件中的 kubelet-bootstrap 用户赋予 system:node-bootstrapper 角色，
+    # 然后 kubelet 才有权限创建认证请求(certificatesigningrequests)
 
 
 
-# #     下载最新的 kubelet 和 kube-proxy 二进制文件 master已有
-# wget https://dl.k8s.io/v1.6.2/kubernetes-server-linux-amd64.tar.gz
-# tar -xzvf kubernetes-server-linux-amd64.tar.gz
-# cd kubernetes
-cd /root/kubernetes/server/kubernetes
-# 从master上copy
-# tar -xzvf  kubernetes-src.tar.gz
-sudo cp -r ./server/bin/{kube-proxy,kubelet} /root/local/bin/
+    # #     下载最新的 kubelet 和 kube-proxy 二进制文件 master已有
+    # wget https://dl.k8s.io/v1.6.2/kubernetes-server-linux-amd64.tar.gz
+    # tar -xzvf kubernetes-server-linux-amd64.tar.gz
+    # cd kubernetes
+    cd /root/kubernetes/server/kubernetes
+    # 从master上copy
+    # tar -xzvf  kubernetes-src.tar.gz
+    sudo cp -r ./server/bin/{kube-proxy,kubelet} /root/local/bin/
 
-/root/local/bin/
-scp root@10.64.3.7:/root/local/bin/{kube-proxy,kubelet} .
+    /root/local/bin/
+    scp root@10.64.3.7:/root/local/bin/{kube-proxy,kubelet} .
 
 
-#     创建 kubelet bootstrapping kubeconfig 文件
-# 感觉也不需要每台都设,待确认
-# 应该是要的,对服务设的
+    #     创建 kubelet bootstrapping kubeconfig 文件
+    # 感觉也不需要每台都设,待确认
+    # 应该是要的,对服务设的
 
-# --embed-certs 为 true 时表示将 certificate-authority 证书写入到生成的 bootstrap.kubeconfig 文件中；
-# 设置 kubelet 客户端认证参数时没有指定秘钥和证书，后续由 kube-apiserver 自动生成
+    # --embed-certs 为 true 时表示将 certificate-authority 证书写入到生成的 bootstrap.kubeconfig 文件中；
+    # 设置 kubelet 客户端认证参数时没有指定秘钥和证书，后续由 kube-apiserver 自动生成
 
-cd /root
+    cd /root
 
-# 设置集群参数
-kubectl config set-cluster kubernetes \
---certificate-authority=/etc/kubernetes/ssl/ca.pem \
---embed-certs=true \
---server=${KUBE_APISERVER} \
---kubeconfig=bootstrap.kubeconfig
+    # 设置集群参数
+    kubectl config set-cluster kubernetes \
+    --certificate-authority=/etc/kubernetes/ssl/ca.pem \
+    --embed-certs=true \
+    --server=${KUBE_APISERVER} \
+    --kubeconfig=bootstrap.kubeconfig
 
-# 设置客户端认证参数
-kubectl config set-credentials kubelet-bootstrap \
---token=${BOOTSTRAP_TOKEN} \
---kubeconfig=bootstrap.kubeconfig
-
-# 设置上下文参数
-kubectl config set-context default \
---cluster=kubernetes \
---user=kubelet-bootstrap \
---kubeconfig=bootstrap.kubeconfig
-
-# 设置默认上下文
-kubectl config use-context default --kubeconfig=bootstrap.kubeconfig
-mv bootstrap.kubeconfig /etc/kubernetes/
-
-# 理论上只要做一次,后面尝试,不能用再添加
-# 是的,只有第一次配置
+    # 设置客户端认证参数
+    kubectl config set-credentials kubelet-bootstrap \
+    --token=${BOOTSTRAP_TOKEN} \
+    --kubeconfig=bootstrap.kubeconfig
+
+    # 设置上下文参数
+    kubectl config set-context default \
+    --cluster=kubernetes \
+    --user=kubelet-bootstrap \
+    --kubeconfig=bootstrap.kubeconfig
+
+    # 设置默认上下文
+    kubectl config use-context default --kubeconfig=bootstrap.kubeconfig
+    mv bootstrap.kubeconfig /etc/kubernetes/
+
+    # 理论上只要做一次,后面尝试,不能用再添加
+    # 是的,只有第一次配置
 
-#     创建 kubelet 的 systemd unit 文件
-# --address 不能设置为 127.0.0.1，否则后续 Pods 访问 kubelet 的 API 接口时会失败，因为 Pods 访问的 127.0.0.1 指向自己而不是 kubelet；
-# 如果设置了 --hostname-override 选项，则 kube-proxy 也需要设置该选项，否则会出现找不到 Node 的情况；
-# --experimental-bootstrap-kubeconfig 指向 bootstrap kubeconfig 文件，kubelet 使用该文件中的用户名和 token 向 kube-apiserver 发送 TLS Bootstrapping 请求；
-# 管理员通过了 CSR 请求后，kubelet 自动在 --cert-dir 目录创建证书和私钥文件(kubelet-client.crt 和 kubelet-client.key)，然后写入 --kubeconfig 文件(自动创建 --kubeconfig 指定的文件)；
-# 建议在 --kubeconfig 配置文件中指定 kube-apiserver 地址，如果未指定 --api-servers 选项，则必须指定 --require-kubeconfig 选项后才从配置文件中读取 kue-apiserver 的地址，否则 kubelet 启动后将找不到 kube-apiserver (日志中提示未找到 API Server），kubectl get nodes 不会返回对应的 Node 信息;
-# --cluster-dns 指定 kubedns 的 Service IP(可以先分配，后续创建 kubedns 服务时指定该 IP)，--cluster-domain 指定域名后缀，这两个参数同时指定后才会生效；
-# kubelet cAdvisor 默认在所有接口监听 4194 端口的请求，对于有外网的机器来说不安全，ExecStartPost 选项指定的 iptables 规则只允许内网机器访问 4194 端口；
+    #     创建 kubelet 的 systemd unit 文件
+    # --address 不能设置为 127.0.0.1，否则后续 Pods 访问 kubelet 的 API 接口时会失败，因为 Pods 访问的 127.0.0.1 指向自己而不是 kubelet；
+    # 如果设置了 --hostname-override 选项，则 kube-proxy 也需要设置该选项，否则会出现找不到 Node 的情况；
+    # --experimental-bootstrap-kubeconfig 指向 bootstrap kubeconfig 文件，kubelet 使用该文件中的用户名和 token 向 kube-apiserver 发送 TLS Bootstrapping 请求；
+    # 管理员通过了 CSR 请求后，kubelet 自动在 --cert-dir 目录创建证书和私钥文件(kubelet-client.crt 和 kubelet-client.key)，然后写入 --kubeconfig 文件(自动创建 --kubeconfig 指定的文件)；
+    # 建议在 --kubeconfig 配置文件中指定 kube-apiserver 地址，如果未指定 --api-servers 选项，则必须指定 --require-kubeconfig 选项后才从配置文件中读取 kue-apiserver 的地址，否则 kubelet 启动后将找不到 kube-apiserver (日志中提示未找到 API Server），kubectl get nodes 不会返回对应的 Node 信息;
+    # --cluster-dns 指定 kubedns 的 Service IP(可以先分配，后续创建 kubedns 服务时指定该 IP)，--cluster-domain 指定域名后缀，这两个参数同时指定后才会生效；
+    # kubelet cAdvisor 默认在所有接口监听 4194 端口的请求，对于有外网的机器来说不安全，ExecStartPost 选项指定的 iptables 规则只允许内网机器访问 4194 端口；
 
-sudo mkdir /var/lib/kubelet 
-kubelet.service
+    sudo mkdir /var/lib/kubelet 
+    kubelet.service
 
-cd /etc/kubernetes/
-scp root@10.64.3.7:/etc/kubernetes/bootstrap.kubeconfig .
-cd /root
+    cd /etc/kubernetes/
+    scp root@10.64.3.7:/etc/kubernetes/bootstrap.kubeconfig .
+    cd /root
 
-#     启动 kubelet
-sudo cp kubelet.service /etc/systemd/system/kubelet.service
-sudo systemctl daemon-reload
-sudo systemctl enable kubelet
-sudo systemctl start kubelet
-systemctl status kubelet
+    #     启动 kubelet
+    sudo cp kubelet.service /etc/systemd/system/kubelet.service
+    sudo systemctl daemon-reload
+    sudo systemctl enable kubelet
+    sudo systemctl start kubelet
+    systemctl status kubelet
 
 
-#   安装和配置 kubelet 1台 是的
-kubectl create clusterrolebinding kubelet-bootstrap --clusterrole=system:node-bootstrapper --user=kubelet-bootstrap
-# --user=kubelet-bootstrap 是文件 /etc/kubernetes/token.csv 中指定的用户名，同时也写入了文件 /etc/kubernetes/bootstrap.kubeconfig
+    #   安装和配置 kubelet 1台 是的
+    kubectl create clusterrolebinding kubelet-bootstrap --clusterrole=system:node-bootstrapper --user=kubelet-bootstrap
+    # --user=kubelet-bootstrap 是文件 /etc/kubernetes/token.csv 中指定的用户名，同时也写入了文件 /etc/kubernetes/bootstrap.kubeconfig
 
-
-#     通过 kubelet 的 TLS 证书请求
-# 查看未授权的 CSR 请求及节点
+
+    #     通过 kubelet 的 TLS 证书请求
+    # 查看未授权的 CSR 请求及节点
 
-kubectl get csr
-kubectl get nodes
+    kubectl get csr
+    kubectl get nodes
 
-kubectl certificate approve csr-x27td
-kubectl certificate approve csr-srqwg
+    kubectl certificate approve csr-x27td
+    kubectl certificate approve csr-srqwg
 
-# 只有批准了才有端口出现,多个, 4194 
+    # 只有批准了才有端口出现,多个, 4194 
 
-ls -l /etc/kubernetes/kubelet.kubeconfig
-ls -l /etc/kubernetes/ssl/kubelet*
-# 自己生成证书
+    ls -l /etc/kubernetes/kubelet.kubeconfig
+    ls -l /etc/kubernetes/ssl/kubelet*
+    # 自己生成证书
 
-kubectl get nodes
+    kubectl get nodes
 
-# 新的节点上线后,pod会自动同步上去,如何控制数量?
+    # 新的节点上线后,pod会自动同步上去,如何控制数量?
 
-#   配置 kube-proxy
-#     创建 kube-proxy 证书
-cd /root/ssl
-kube-proxy-csr.json
+    #   配置 kube-proxy
+    #     创建 kube-proxy 证书
+    cd /root/ssl
+    kube-proxy-csr.json
 
- cfssl gencert -ca=/etc/kubernetes/ssl/ca.pem \
- -ca-key=/etc/kubernetes/ssl/ca-key.pem \
- -config=/etc/kubernetes/ssl/ca-config.json \
- -profile=kubernetes  kube-proxy-csr.json | cfssljson -bare kube-proxy
+     cfssl gencert -ca=/etc/kubernetes/ssl/ca.pem \
+     -ca-key=/etc/kubernetes/ssl/ca-key.pem \
+     -config=/etc/kubernetes/ssl/ca-config.json \
+     -profile=kubernetes  kube-proxy-csr.json | cfssljson -bare kube-proxy
 
- ls kube-proxy*
- sudo mv kube-proxy*.pem /etc/kubernetes/ssl/
- rm kube-proxy.csr  kube-proxy-csr.json
+     ls kube-proxy*
+     sudo mv kube-proxy*.pem /etc/kubernetes/ssl/
+     rm kube-proxy.csr  kube-proxy-csr.json
 
-# CN 指定该证书的 User 为 system:kube-proxy；
-# kube-apiserver 预定义的 RoleBinding system:node-proxier 将User system:kube-proxy 与 Role system:node-proxier 绑定，该 Role 授予了调用 kube-apiserver Proxy 相关 API 的权限；
-# hosts 属性值为空列表；
+    # CN 指定该证书的 User 为 system:kube-proxy；
+    # kube-apiserver 预定义的 RoleBinding system:node-proxier 将User system:kube-proxy 与 Role system:node-proxier 绑定，该 Role 授予了调用 kube-apiserver Proxy 相关 API 的权限；
+    # hosts 属性值为空列表；
 
 
-#     创建 kube-proxy kubeconfig 文件
-# 设置集群参数
-kubectl config set-cluster kubernetes \
---certificate-authority=/etc/kubernetes/ssl/ca.pem \
---embed-certs=true \
---server=${KUBE_APISERVER} \
---kubeconfig=kube-proxy.kubeconfig
+    #     创建 kube-proxy kubeconfig 文件
+    # 设置集群参数
+    kubectl config set-cluster kubernetes \
+    --certificate-authority=/etc/kubernetes/ssl/ca.pem \
+    --embed-certs=true \
+    --server=${KUBE_APISERVER} \
+    --kubeconfig=kube-proxy.kubeconfig
 
-# 设置客户端认证参数
-kubectl config set-credentials kube-proxy \
---client-certificate=/etc/kubernetes/ssl/kube-proxy.pem \
---client-key=/etc/kubernetes/ssl/kube-proxy-key.pem \
---embed-certs=true \
---kubeconfig=kube-proxy.kubeconfig
+    # 设置客户端认证参数
+    kubectl config set-credentials kube-proxy \
+    --client-certificate=/etc/kubernetes/ssl/kube-proxy.pem \
+    --client-key=/etc/kubernetes/ssl/kube-proxy-key.pem \
+    --embed-certs=true \
+    --kubeconfig=kube-proxy.kubeconfig
 
-# 设置上下文参数
-kubectl config set-context default \
---cluster=kubernetes \
---user=kube-proxy \
---kubeconfig=kube-proxy.kubeconfig
+    # 设置上下文参数
+    kubectl config set-context default \
+    --cluster=kubernetes \
+    --user=kube-proxy \
+    --kubeconfig=kube-proxy.kubeconfig
 
-# 设置默认上下文
-kubectl config use-context default --kubeconfig=kube-proxy.kubeconfig
-mv kube-proxy.kubeconfig /etc/kubernetes/
+    # 设置默认上下文
+    kubectl config use-context default --kubeconfig=kube-proxy.kubeconfig
+    mv kube-proxy.kubeconfig /etc/kubernetes/
 
-# 这个还是每台要配置的,因为证书不一样
+    # 这个还是每台要配置的,因为证书不一样
 
-# 设置集群参数和客户端认证参数时 --embed-certs 都为 true，这会将 certificate-authority、client-certificate 和 client-key 指向的证书文件内容写入到生成的 kube-proxy.kubeconfig 文件中；
-# kube-proxy.pem 证书中 CN 为 system:kube-proxy，kube-apiserver 预定义的 RoleBinding cluster-admin 将User system:kube-proxy 与 Role system:node-proxier 绑定，该 Role 授予了调用 kube-apiserver Proxy 相关 API 的权限
+    # 设置集群参数和客户端认证参数时 --embed-certs 都为 true，这会将 certificate-authority、client-certificate 和 client-key 指向的证书文件内容写入到生成的 kube-proxy.kubeconfig 文件中；
+    # kube-proxy.pem 证书中 CN 为 system:kube-proxy，kube-apiserver 预定义的 RoleBinding cluster-admin 将User system:kube-proxy 与 Role system:node-proxier 绑定，该 Role 授予了调用 kube-apiserver Proxy 相关 API 的权限
 
-#     创建 kube-proxy 的 systemd unit 文件
-sudo mkdir -p /var/lib/kube-proxy 
+    #     创建 kube-proxy 的 systemd unit 文件
+    sudo mkdir -p /var/lib/kube-proxy 
 
-kube-proxy.service
+    kube-proxy.service
 
-# --hostname-override 参数值必须与 kubelet 的值一致，否则 kube-proxy 启动后会找不到该 Node，从而不会创建任何 iptables 规则；
-# --cluster-cidr 必须与 kube-controller-manager 的 --cluster-cidr 选项值一致；
-# kube-proxy 根据 --cluster-cidr 判断集群内部和外部流量，指定 --cluster-cidr 或 --masquerade-all 选项后 kube-proxy 才会对访问 Service IP 的请求做 SNAT；
-# --kubeconfig 指定的配置文件嵌入了 kube-apiserver 的地址、用户名、证书、秘钥等请求和认证信息；
-# 预定义的 RoleBinding cluster-admin 将User system:kube-proxy 与 Role system:node-proxier 绑定，该 Role 授予了调用 kube-apiserver Proxy 相关 API 的权限；
+    # --hostname-override 参数值必须与 kubelet 的值一致，否则 kube-proxy 启动后会找不到该 Node，从而不会创建任何 iptables 规则；
+    # --cluster-cidr 必须与 kube-controller-manager 的 --cluster-cidr 选项值一致；
+    # kube-proxy 根据 --cluster-cidr 判断集群内部和外部流量，指定 --cluster-cidr 或 --masquerade-all 选项后 kube-proxy 才会对访问 Service IP 的请求做 SNAT；
+    # --kubeconfig 指定的配置文件嵌入了 kube-apiserver 的地址、用户名、证书、秘钥等请求和认证信息；
+    # 预定义的 RoleBinding cluster-admin 将User system:kube-proxy 与 Role system:node-proxier 绑定，该 Role 授予了调用 kube-apiserver Proxy 相关 API 的权限；
 
-#     启动 kube-proxy
-sudo cp kube-proxy.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable kube-proxy
-sudo systemctl start kube-proxy
-systemctl status kube-proxy
+    #     启动 kube-proxy
+    sudo cp kube-proxy.service /etc/systemd/system/
+    sudo systemctl daemon-reload
+    sudo systemctl enable kube-proxy
+    sudo systemctl start kube-proxy
+    systemctl status kube-proxy
 
-#   验证集群功能
-nginx-ds.yml
-kubectl create -f nginx-ds.yml
+    #   验证集群功能
+    nginx-ds.yml
+    kubectl create -f nginx-ds.yml
 
-#     检查节点状态
-kubectl get nodes
+    #     检查节点状态
+    kubectl get nodes
 
-#     检查各 Node 上的 Pod IP 连通性
-kubectl get pods  -o wide|grep nginx-ds
+    #     检查各 Node 上的 Pod IP 连通性
+    kubectl get pods  -o wide|grep nginx-ds
 
-#     检查服务 IP 和端口可达性
-kubectl get svc |grep nginx-ds
-# nginx-ds     10.254.64.28   <nodes>       80:8489/TCP   9m
+    #     检查服务 IP 和端口可达性
+    kubectl get svc |grep nginx-ds
+    # nginx-ds     10.254.64.28   <nodes>       80:8489/TCP   9m
 
 
- curl 10.254.136.178 # `kubectl get svc |grep nginx-ds` 输出中的服务 IP
-# proxy安装成功才能访问svc上的机器
+     curl 10.254.136.178 # `kubectl get svc |grep nginx-ds` 输出中的服务 IP
+    # proxy安装成功才能访问svc上的机器
 
-#     检查服务的 NodePort 可达性
-export NODE_IP=10.64.3.7 # 当前 Node 的 IP
-export NODE_PORT=8744 
+    #     检查服务的 NodePort 可达性
+    export NODE_IP=10.64.3.7 # 当前 Node 的 IP
+    export NODE_PORT=8744 
 
-# 上文 svc 输出中 80 端口映射的 NodePort
+    # 上文 svc 输出中 80 端口映射的 NodePort
 
-curl ${NODE_IP}:${NODE_PORT}
-# ok
+    curl ${NODE_IP}:${NODE_PORT}
+    # ok
 
 
 
 
-# 部署 DNS 插件
-cd /root/kubernetes/cluster/addons/dns
-ls *.yaml *.base
+    # 部署 DNS 插件
+    cd /root/kubernetes/cluster/addons/dns
+    ls *.yaml *.base
 
-#   系统预定义的 RoleBinding
-kubectl get clusterrolebindings system:kube-dns -o yaml
+    # 理论上一个就够了?
 
-#   配置 kube-dns ServiceAccount
-# 无需修改
+    #   系统预定义的 RoleBinding
+    kubectl get clusterrolebindings system:kube-dns -o yaml
 
-#   配置 kube-dns 服务
-diff kubedns-svc.yaml.base kubedns-svc.yaml
-# CLUSTER_DNS_SVC_IP 10.254.0.2
+    #   配置 kube-dns ServiceAccount
+    # 无需修改
 
-#   配置 kube-dns Deployment
-diff kubedns-controller.yaml.base kubedns-controller.yaml
+    #   配置 kube-dns 服务
+    diff kubedns-svc.yaml.base kubedns-svc.yaml
+    # CLUSTER_DNS_SVC_IP 10.254.0.2
 
-#   执行所有定义文件
-mkdir -p /root/kubernetes-git/cluster/addons/dns
-cp kubedns-* /root/kubernetes-git/cluster/addons/dns
-cd !$
-kubectl create -f .
-# configmap, deployment, serviceaccount, service
+    #   配置 kube-dns Deployment
+    diff kubedns-controller.yaml.base kubedns-controller.yaml
 
-#   检查 kubedns 功能
-my-nginx.yaml
-kubectl create -f my-nginx.yaml
+    # 主要替换了一些镜像,及--domain, --server, --probe=kubedns, --probe=dnsmasq 等
+    # 需要的时候对比修改
 
-kubectl expose deploy my-nginx
-kubectl get services --all-namespaces |grep my-nginx
+    #   执行所有定义文件
+    mkdir -p /root/kubernetes-git/cluster/addons/dns
+    cp kubedns-* /root/kubernetes-git/cluster/addons/dns
+    cd !$
+    kubectl create -f .
 
-pod-nginx.yaml
-kubectl create -f pod-nginx.yaml
-kubectl exec  nginx -i -t -- /bin/bash
-root@nginx:/# cat /etc/resolv.conf
+    # configmap "kube-dns" created
+    # deployment "kube-dns" created
+    # serviceaccount "kube-dns" created
+    # service "kube-dns" created
+    # 分别是 设置,部署,帐号,服务
 
-# ping my-nginx
-# ping kubernetes
-# ping kube-dns.kube-system.svc.cluster.local
-exit 
+    #   检查 kubedns 功能
 
+    my-nginx.yaml
+    # 简历配置
 
+    kubectl create -f my-nginx.yaml
+    # 部署配置
+
+    kubectl expose deploy my-nginx
+    kubectl get services --all-namespaces |grep my-nginx
+    # 暴露为服务,检查
+
+
+    # 创建另一个 Pod，
+    # 查看 /etc/resolv.conf 是否包含 kubelet 配置的 --cluster-dns 和 --cluster-domain，
+    # 是否能够将服务 my-nginx 解析到上面显示的 Cluster IP 10.254.86.48
+
+    pod-nginx.yaml
+    kubectl create -f pod-nginx.yaml
+
+    kubectl exec  nginx -i -t -- /bin/bash
+    root@nginx:/# cat /etc/resolv.conf
+
+    ping my-nginx
+    ping kubernetes
+    ping kube-dns.kube-system.svc.cluster.local
+    exit 
+
+    # 进入docker中, 测试dns, 结果失败,端口没开,怀疑镜像不行了
+    # 如何查看镜像及docker日志?
+    # pods没起来
 
 
 # 部署 Dashboard 插件
-cd kubernetes/cluster/addons/dashboard
+cd /root/kubernetes/cluster/addons/dashboard
 # 定义一个名为 dashboard 的 ServiceAccount，然后将它和 Cluster Role view 绑定
 
 #   配置dashboard-service

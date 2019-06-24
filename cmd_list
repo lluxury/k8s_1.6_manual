@@ -1,0 +1,27 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+kubectl get clusterrolebindings system:kube-dns -o yaml
+
+kubectl create -f .
+kubectl create -f xx.ymal
+
+kubectl expose deploy my-nginx
+
+kubectl get services --all-namespaces |grep my-nginx
+
+kubectl exec nginx -i -t -- /bin/bash
+
+
+
