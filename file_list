@@ -68,12 +68,12 @@ kubelet
 
 kubelet.service
 
--rw------- 1 root root 2276 Jun 23 01:01 /etc/kubernetes/kubelet.kubeconfig
+kubelet.kubeconfig
 
--rw-r--r-- 1 root root 1042 Jun 23 01:01 /etc/kubernetes/ssl/kubelet-client.crt
--rw------- 1 root root  227 Jun 23 00:54 /etc/kubernetes/ssl/kubelet-client.key
--rw-r--r-- 1 root root 1103 Jun 23 01:01 /etc/kubernetes/ssl/kubelet.crt
--rw------- 1 root root 1675 Jun 23 01:01 /etc/kubernetes/ssl/kubelet.key
+// kubelet-client.crt
+// kubelet-client.key
+// kubelet.crt
+// kubelet.key
 
 kube-proxy.kubeconfig
 
@@ -88,3 +88,5 @@ dashboard-controller.yaml
 dashboard-rbac.yaml  
 dashboard-service.yaml
 
+heapster-rbac.yaml
+influxdb-cm.yaml

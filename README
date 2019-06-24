@@ -892,11 +892,92 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
 
 
  # 部署 Heapster 插件
+# 1.2 移除,本节跳过
+
+yum install unzip -y
+wget https://github.com/kubernetes/heapster/archive/v1.3.0.zip
+unzip v1.3.0.zip
+mv v1.3.0.zip heapster-1.3.0
+
  #  配置 grafana-deployment
+
+cd heapster-1.3.0/deploy/kube-config/influxdb
+ls *.yaml
+
+heapster-rbac.yaml
+influxdb-cm.yaml
+# 配置丢失
+
+grafana-deployment.yaml
+# 如果后续使用 kube-apiserver 或者 kubectl proxy 访问 grafana dashboard，
+# 必须将 GF_SERVER_ROOT_URL 设置为 /api/v1/proxy/namespaces/kube-system/services/monitoring-grafana/
+
+
+
  #  配置 heapster-deployment
+ heapster-deployment.yaml
+# 使用的是自定义的、名为 heapster 的 ServiceAccount
+
  #  配置 influxdb-deployment
+
+# influxdb 官方建议使用命令行或 HTTP API 接口来查询数据库，从 v1.1.0 版本开始默认关闭 admin UI，
+# 将在后续版本中移除 admin UI 插件
+ 
+ # 开启镜像中 admin UI的办法如下：先导出镜像中的 influxdb 配置文件，开启 admin 插件后，
+ # 再将配置文件内容写入 ConfigMap，最后挂载到镜像中
+
+# manifests 目录下的 ConfigMap 文件
+
+# 导出镜像中的 influxdb 配置文件
+docker run --rm --entrypoint 'cat'  -ti lvanneo/heapster-influxdb-amd64:v1.1.1 /etc/config.toml >config.toml.orig
+cp config.toml.orig config.toml
+
+# 修改：启用 admin 接口
+vi config.toml
+
+# 将修改后的配置写入到 ConfigMap 对象中
+kubectl create configmap influxdb-config --from-file=config.toml  -n kube-system
+
+influxdb-deployment.yaml
+#   - mountPath: /etc/
+#     name: influxdb-config
+
+# - name: influxdb-config
+#   configMap:
+#     name: influxdb-config
+
+
+
  #  配置 monitoring-influxdb Service
+
+ influxdb-service.yaml
+ # type: NodePort
+
+  # name: http
+# - port: 8083
+  # targetPort: 8083
+  # name: admin
+
+
  #  执行所有定义文件
+
+cd /root/heapster-1.3.0/deploy/kube-config/influxdb
+kubectl create -f  .
+
  #  检查执行结果
+ kubectl get deployments -n kube-system | grep -E 'heapster|monitoring'
+ kubectl get pods -n kube-system | grep -E 'heapster|monitoring'
+
  #  访问 grafana
+ kubectl cluster-info
+http://10.64.3.7:8080/api/v1/proxy/namespaces/kube-system/services/monitoring-grafana
+
+kubectl proxy --address='10.64.3.7' --port=8086 --accept-hosts='^*$'
+http://10.64.3.7:8086/api/v1/proxy/namespaces/kube-system/services/monitoring-grafana
+
+
  #  访问 influxdb admin UI
+kubectl get svc -n kube-system|grep influxdb
+http://10.64.3.7:8080/api/v1/proxy/namespaces/kube-system/services/monitoring-influxdb:8083/
+
+# 这一章,熟练度不够,回头找到文件还要再熟悉下
