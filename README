@@ -490,13 +490,13 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
 
 
 # 部署 Node 节点
-# 感觉master有3台,节点有多个,后面验证
+  # 感觉master有3台,节点有多个,后面验证
 
-#   使用的变量
-export MASTER_IP=10.64.3.7
-export KUBE_APISERVER="https://${MASTER_IP}:6443"
-export NODE_IP=10.64.3.7
-source /root/local/bin/environment.sh
+    #   使用的变量
+    export MASTER_IP=10.64.3.7
+    export KUBE_APISERVER="https://${MASTER_IP}:6443"
+    export NODE_IP=10.64.3.7
+    source /root/local/bin/environment.sh
 
 # 第二台
 # 替换为 kubernetes master 集群任一机器 IP
@@ -509,7 +509,8 @@ source /root/local/bin/environment.sh
 #   安装和配置 docker
 #     下载最新的 docker 二进制文件
 # wget https://get.docker.com/builds/Linux/x86_64/docker-17.04.0-ce.tgz
-scp docker-17.04.0-ce.tgz root@10.64.3.8:
+
+scp root@10.64.3.7:/root/docker-17.04.0-ce.tgz .
 
 tar -xvf docker-17.04.0-ce.tgz
 cp docker/docker* /root/local/bin
@@ -528,7 +529,9 @@ cp docker/completion/bash/docker /etc/bash_completion.d/
 
 #     创建 docker 的 systemd unit 文件
 cd ~
+
 docker.service
+
 sudo iptables -P FORWARD ACCEPT
 
 vi /etc/rc.local
@@ -574,6 +577,10 @@ cd /root/kubernetes/server/kubernetes
 # tar -xzvf  kubernetes-src.tar.gz
 sudo cp -r ./server/bin/{kube-proxy,kubelet} /root/local/bin/
 
+/root/local/bin/
+scp root@10.64.3.7:/root/local/bin/{kube-proxy,kubelet} .
+
+
 #     创建 kubelet bootstrapping kubeconfig 文件
 # 感觉也不需要每台都设,待确认
 # 应该是要的,对服务设的
@@ -606,6 +613,7 @@ kubectl config use-context default --kubeconfig=bootstrap.kubeconfig
 mv bootstrap.kubeconfig /etc/kubernetes/
 
 # 理论上只要做一次,后面尝试,不能用再添加
+# 是的,只有第一次配置
 
 #     创建 kubelet 的 systemd unit 文件
 # --address 不能设置为 127.0.0.1，否则后续 Pods 访问 kubelet 的 API 接口时会失败，因为 Pods 访问的 127.0.0.1 指向自己而不是 kubelet；
@@ -619,6 +627,10 @@ mv bootstrap.kubeconfig /etc/kubernetes/
 sudo mkdir /var/lib/kubelet 
 kubelet.service
 
+cd /etc/kubernetes/
+scp root@10.64.3.7:/etc/kubernetes/bootstrap.kubeconfig .
+cd /root
+
 #     启动 kubelet
 sudo cp kubelet.service /etc/systemd/system/kubelet.service
 sudo systemctl daemon-reload
@@ -627,11 +639,10 @@ sudo systemctl start kubelet
 systemctl status kubelet
 
 
-#   安装和配置 kubelet 1台?
+#   安装和配置 kubelet 1台 是的
 kubectl create clusterrolebinding kubelet-bootstrap --clusterrole=system:node-bootstrapper --user=kubelet-bootstrap
 # --user=kubelet-bootstrap 是文件 /etc/kubernetes/token.csv 中指定的用户名，同时也写入了文件 /etc/kubernetes/bootstrap.kubeconfig
 
-# 不知道是一台还是多台
 
 #     通过 kubelet 的 TLS 证书请求
 # 查看未授权的 CSR 请求及节点
@@ -640,11 +651,17 @@ kubectl get csr
 kubectl get nodes
 
 kubectl certificate approve csr-x27td
+kubectl certificate approve csr-srqwg
+
+# 只有批准了才有端口出现,多个, 4194 
 
 ls -l /etc/kubernetes/kubelet.kubeconfig
 ls -l /etc/kubernetes/ssl/kubelet*
+# 自己生成证书
 
 kubectl get nodes
+
+# 新的节点上线后,pod会自动同步上去,如何控制数量?
 
 #   配置 kube-proxy
 #     创建 kube-proxy 证书
@@ -690,11 +707,14 @@ kubectl config set-context default \
 kubectl config use-context default --kubeconfig=kube-proxy.kubeconfig
 mv kube-proxy.kubeconfig /etc/kubernetes/
 
+# 这个还是每台要配置的,因为证书不一样
+
 # 设置集群参数和客户端认证参数时 --embed-certs 都为 true，这会将 certificate-authority、client-certificate 和 client-key 指向的证书文件内容写入到生成的 kube-proxy.kubeconfig 文件中；
 # kube-proxy.pem 证书中 CN 为 system:kube-proxy，kube-apiserver 预定义的 RoleBinding cluster-admin 将User system:kube-proxy 与 Role system:node-proxier 绑定，该 Role 授予了调用 kube-apiserver Proxy 相关 API 的权限
 
 #     创建 kube-proxy 的 systemd unit 文件
 sudo mkdir -p /var/lib/kube-proxy 
+
 kube-proxy.service
 
 # --hostname-override 参数值必须与 kubelet 的值一致，否则 kube-proxy 启动后会找不到该 Node，从而不会创建任何 iptables 规则；
@@ -726,6 +746,7 @@ kubectl get svc |grep nginx-ds
 
 
  curl 10.254.136.178 # `kubectl get svc |grep nginx-ds` 输出中的服务 IP
+# proxy安装成功才能访问svc上的机器
 
 #     检查服务的 NodePort 可达性
 export NODE_IP=10.64.3.7 # 当前 Node 的 IP
