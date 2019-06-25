@@ -12,6 +12,14 @@
     # kubedns、dashboard、heapster (influxdb、grafana)、EFK (elasticsearch、fluentd、kibana) 插件
     # 私有 docker registry，使用 ceph rgw 后端存储，TLS + HTTP Basic 认证
 
+
+# 补全
+ yum install -y bash-completion
+ locate bash_completion
+ source /usr/share/bash-completion/bash_completion
+ source <(kubectl completion bash)
+
+
     # 由10.64.3.7牵头
     touch environment.sh
     vi !$
@@ -772,15 +780,24 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
     #   配置 kube-dns ServiceAccount
     # 无需修改
 
+
+
     #   配置 kube-dns 服务
     diff kubedns-svc.yaml.base kubedns-svc.yaml
     # CLUSTER_DNS_SVC_IP 10.254.0.2
 
     #   配置 kube-dns Deployment
-    diff kubedns-controller.yaml.base kubedns-controller.yaml
+    kubedns-controller.yaml
+    # 58 镜像
+    # 88 域名
+    # 92 注释 __PILLAR__FEDERATIONS__DOMAIN__MAP__
+    # 110 镜像
+    # 129 修改域名
+    # 148 镜像
+    # 161 域名
 
-    # 主要替换了一些镜像,及--domain, --server, --probe=kubedns, --probe=dnsmasq 等
-    # 需要的时候对比修改
+# --domain 为集群环境文档 变量 CLUSTER_DNS_DOMAIN 的值 注意
+# 使用系统已经做了 RoleBinding 的 kube-dns ServiceAccount，该账户具有访问 kube-apiserver DNS 相关 API 的权限
 
     #   执行所有定义文件
     mkdir -p /root/kubernetes-git/cluster/addons/dns
@@ -827,6 +844,12 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
     # pods没起来
 # NAME                   DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
 # kube-dns               1         0         0            0           2h
+
+# 重装了一下好了,怪事
+
+# Failed to pull image "rosskukulinski/dne:v1.0.0": rpc error: code = 2 desc = Error response from daemon: {"message":"repository rosskukulinski/dne not found: does not exist or no pull access"}
+# Error syncing pod, skipping: failed to "StartContainer" for "fail" with ErrImagePull: "rpc error: code = 2 desc = Error response from daemon: {\"message\":\"repository rosskukulinski/dne not found: does not exist or no pull access\"}"
+
 
 # 部署 Dashboard 插件
     cd /root/kubernetes/cluster/addons/dashboard
@@ -906,7 +929,7 @@ ls *.yaml
 
 heapster-rbac.yaml
 influxdb-cm.yaml
-# 配置丢失
+# 很长的配置,有机会学习一下
 
 grafana-deployment.yaml
 # 如果后续使用 kube-apiserver 或者 kubectl proxy 访问 grafana dashboard，
@@ -958,6 +981,16 @@ influxdb-deployment.yaml
   # targetPort: 8083
   # name: admin
 
+# deployment "monitoring-grafana" created
+# service "monitoring-grafana" created
+# deployment "heapster" created
+# serviceaccount "heapster" created
+# clusterrolebinding "heapster" created
+# service "heapster" created
+# deployment "monitoring-influxdb" created
+# service "monitoring-influxdb" created
+
+# Error from server (AlreadyExists): error when creating "influxdb-cm.yaml": configmaps "influxdb-config" already exists
 
  #  执行所有定义文件
 
@@ -981,3 +1014,287 @@ kubectl get svc -n kube-system|grep influxdb
 http://10.64.3.7:8080/api/v1/proxy/namespaces/kube-system/services/monitoring-influxdb:8083/
 
 # 这一章,熟练度不够,回头找到文件还要再熟悉下
+# 部署完成,测试全失败,也可能是dns的故障
+
+
+
+# 部署 EFK 插件
+
+cd /root/kubernetes/cluster/addons/fluentd-elasticsearch
+ls *.yaml
+
+touch es-rbac.yaml
+touch fluentd-es-rbac.yaml
+
+#   配置 es-controller.yaml
+
+vi es-controller.yaml
+# serviceAccountName: elasticsearch
+# 及镜像
+
+#   配置 es-service.yaml
+
+#   配置 fluentd-es-ds.yaml
+
+vi fluentd-es-ds.yaml
+# serviceAccountName: fluentd
+# 及镜像
+
+#   配置 kibana-controller.yaml
+vi kibana-controller.yaml
+
+#   给 Node 设置标签
+# DaemonSet fluentd-es-v1.22 只会调度到设置了标签 beta.kubernetes.io/fluentd-ds-ready=true 的 Node，
+# 需要在期望运行 fluentd 的 Node 上设置该标签  
+# nodeSelector:
+
+kubectl get nodes
+kubectl label nodes 10.64.3.7 beta.kubernetes.io/fluentd-ds-ready=true
+
+#   执行定义文件
+pwd
+ls *.yaml
+kubectl create -f .
+
+# replicationcontroller "elasticsearch-logging-v1" created
+# serviceaccount "elasticsearch" created
+
+# clusterrolebinding "elasticsearch" created
+# service "elasticsearch-logging" created
+
+# daemonset "fluentd-es-v1.22" created
+# serviceaccount "fluentd" created
+
+# clusterrolebinding "fluentd" created
+# deployment "kibana-logging" created
+# service "kibana-logging" created
+
+
+#   检查执行结果
+kubectl get deployment -n kube-system|grep kibana
+kubectl get pods -n kube-system|grep -E 'elasticsearch|fluentd|kibana'
+kubectl get service  -n kube-system|grep -E 'elasticsearch|kibana'
+
+kubectl logs kibana-logging-324921636-v8hk7 -n kube-system -f
+#   访问 kibana
+kubectl cluster-info
+http://10.64.3.7:8080/api/v1/proxy/namespaces/kube-system/services/kibana-logging
+
+kubectl proxy --address='10.64.3.7' --port=8086 --accept-hosts='^*$'
+http://10.64.3.7:8086/api/v1/proxy/namespaces/kube-system/services/kibana-logging
+
+# 创建Index后，稍等几分钟就可以在 Discover 菜单下看到 ElasticSearch logging 中汇聚的日志?
+# 貌似有个图
+
+# 配置是配置完了,包还没下来,回头再看
+
+
+
+# 部署 Docker Registry
+
+ # registry v2
+# 部署一个 TLS 加密、HTTP Basic 认证、用 ceph rgw 做后端存储
+# 暂时先不要布吧,感觉用的不多
+
+# ceph rgw: 10.64.3.9
+# docker registry: 10.64.3.7
+
+#   部署 ceph RGW 节点
+ceph-deploy rgw create 10.64.3.9
+
+#   创建测试账号 demo
+radosgw-admin user create --uid=demo --display-name="ceph rgw demo user"
+
+#   创建 demo 账号的子账号 swift
+# 当前 registry 只支持使用 swift 协议访问 ceph rgw 存储，暂时不支持 s3 协议
+radosgw-admin subuser create --uid demo --subuser=demo:swift --access=full --secret=secretkey --key-type=swift
+
+
+#   创建 demo:swift 子账号的 sercret key
+radosgw-admin key create --subuser=demo:swift --key-type=swift --gen-secret
+
+    # "swift_keys": [
+    #     {
+    #         "user": "demo:swift",
+    #         "secret_key": "aCgVTx3Gfz1dBiFS4NfjIRmvT0sgpHDP6aa0Yfrh"
+    #     }
+    # ],
+
+
+
+
+#   创建 docker registry
+mdir -p registry/{auth,certs}
+
+registry-csr.json
+
+cfssl gencert -ca=/etc/kubernetes/ssl/ca.pem \
+  -ca-key=/etc/kubernetes/ssl/ca-key.pem \
+  -config=/etc/kubernetes/ssl/ca-config.json \
+  -profile=kubernetes registry-csr.json | cfssljson -bare registry
+cp registry.pem registry-key.pem registry/certs
+
+# 证书应该是在3.7上执行的
+
+# 创建 HTTP Baisc 认证文件
+docker run --entrypoint htpasswd registry:2 -Bbn foo foo123  > auth/htpasswd
+cat auth/htpasswd
+
+# 配置参数
+export RGW_AUTH_URL="http://10.64.3.9:7480/auth/v1"
+export RGW_USER="demo:swift"
+export RGW_SECRET_KEY="aCgVTx3Gfz1dBiFS4NfjIRmvT0sgpHDP6aa0Yfrh"
+
+config.yml
+
+# storage.swift 指定后端使用 swfit 接口协议的存储，这里配置的是 ceph rgw 存储参数；
+# auth.htpasswd 指定了 HTTP Basic 认证的 token 文件路径；
+# http.tls 指定了 registry http 服务器的证书和秘钥文件路径；
+
+
+
+# 创建 docker registry
+
+docker run -d -p 8000:8000 \
+    -v $(pwd)/registry/auth/:/auth \
+    -v $(pwd)/registry/certs:/certs \
+    -v $(pwd)/config.yml:/etc/docker/registry/config.yml \
+    --name registry registry:2
+
+# 执行该 docker run 命令的机器 IP 为 10.64.3.7
+
+# 这段写的不太好, ceph不熟,不知道在哪操作
+
+#   向 registry push image
+# 将签署 registry 证书的 CA 证书拷贝到 /etc/docker/certs.d/10.64.3.7:8000 目录下
+
+sudo mkdir -p /etc/docker/certs.d/10.64.3.7:8000
+sudo cp /etc/kubernetes/ssl/ca.pem /etc/docker/certs.d/10.64.3.7:8000/ca.crt
+
+docker login 10.64.3.7:8000
+
+cat ~/.docker/config.json
+
+# 将本地的 image 打上私有 registry 的 tag
+docker tag docker.io/kubernetes/pause 10.64.3.7:8000/zhangjun3/pause
+docker images |grep pause
+
+# 将 image push 到私有 registry
+docker push 10.64.3.7:8000/zhangjun3/pause
+
+
+# 查看 ceph 上是否已经有 push 的 pause 容器文件
+rados lspools
+rados --pool default.rgw.buckets.data ls|grep pause
+
+#   私有 registry 的运维操作
+#     查询私有镜像中的 images
+curl  --user zhangjun3:xxx --cacert /etc/docker/certs.d/10.64.3.7\:8000/ca.crt https://10.64.3.7:8000/v2/_catalog
+
+#     查询某个镜像的 tags 列表
+curl  --user zhangjun3:xxx --cacert /etc/docker/certs.d/10.64.3.7\:8000/ca.crt https://10.64.3.7:8000/v2/zhangjun3/busybox/tags/list
+
+#     获取 image 或 layer 的 digest
+# 向 v2/<repoName>/manifests/<tagName> 发 GET 请求，从响应的头部 Docker-Content-Digest 获取 image digest，从响应的 body 的 fsLayers.blobSum 中获取 layDigests;
+# 注意，必须包含请求头：Accept: application/vnd.docker.distribution.manifest.v2+json
+
+curl -v -H "Accept: application/vnd.docker.distribution.manifest.v2+json" --user zhangjun3:xxx --cacert /etc/docker/certs.d/10.64.3.7\:8000/ca.crt https://10.64.3.7:8000/v2/zhangjun3/busybox/manifests/latest
+
+#     删除 image
+curl -X DELETE  --user zhangjun3:xxx --cacert /etc/docker/certs.d/10.64.3.7\:8000/ca.crt https://10.64.3.7:8000/v2/zhangjun3/busybox/manifests/sha256:68effe31a4ae8312e47f54bec52d1fc925908009ce7e6f734e1b54a4169081c5
+
+#     删除 layer
+# 向 /v2/<name>/blobs/<digest>发送 DELETE 请求，其中 digest 是上一步返回的 fsLayers.blobSum 字段内容：
+
+curl -X DELETE  --user zhangjun3:xxx --cacert /etc/docker/certs.d/10.64.3.7\:8000/ca.crt https://10.64.3.7:8000/v2/zhangjun3/busybox/blobs/sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4
+curl -X DELETE  --cacert /etc/docker/certs.d/10.64.3.7\:8000/ca.crt https://10.64.3.7:8000/v2/zhangjun3/busybox/blobs/sha256:04176c8b224aa0eb9942af765f66dae866f436e75acef028fe44b8a98e045515
+# 熟悉一下,即可,不是主流
+
+
+# 部署 Harbor 私有仓库
+#   使用的变量
+export NODE_IP=10.64.3.7
+
+#   下载文件
+wget https://github.com/docker/compose/releases/download/1.12.0/docker-compose-Linux-x86_64
+mv ~/docker-compose-Linux-x86_64 /root/local/bin/docker-compose
+chmod a+x  /root/local/bin/docker-compose
+export PATH=/root/local/bin:$PATH
+
+# wget  --continue https://github.com/vmware/harbor/releases/download/v1.1.0/harbor-offline-installer-v1.1.0.tgz
+wget  --continue http://harbor.orientsoft.cn/harbor-1.1.1/harbor-offline-installer-v1.1.1.tgz
+tar -xzvf harbor-offline-installer-v1.1.1.tgz
+cd harbor
+
+#   导入 docker images
+# 导入离线安装包中 harbor 相关的 docker images：
+
+docker load -i harbor.v1.1.1.tar.gz
+
+#   创建 harbor nginx 服务器使用的 TLS 证书
+harbor-csr.json
+
+ cfssl gencert -ca=/etc/kubernetes/ssl/ca.pem \
+ -ca-key=/etc/kubernetes/ssl/ca-key.pem \
+ -config=/etc/kubernetes/ssl/ca-config.json \
+ -profile=kubernetes harbor-csr.json | cfssljson -bare harbor
+ 
+ ls harbor*
+ # harbor.csr  harbor-csr.json  harbor-key.pem harbor.pem
+
+ sudo mkdir -p /etc/harbor/ssl
+ sudo mv harbor*.pem /etc/harbor/ssl
+ rm harbor.csr  harbor-csr.json
+
+#   修改 harbor.cfg 文件
+
+vi harbor.cfg
+# hostname, ui_url_protocol,证书,原有值不能保留
+
+#   加载和启动 harbor 镜像
+./install.sh
+# 应该是首次使用
+
+#   访问管理界面
+https://10.64.3.7
+
+# 用账号 admin 和 harbor.cfg 配置文件中的默认密码 Harbor12345 登陆系统
+
+#   harbor 运行时产生的文件、目录
+ls /var/log/harbor/2019-06-25/
+ls /data/
+
+#   docker 客户端登陆
+# 将签署 harbor 证书的 CA 证书拷贝到 /etc/docker/certs.d/10.64.3.7 目录下
+sudo mkdir -p /etc/docker/certs.d/10.64.3.7
+sudo cp /etc/kubernetes/ssl/ca.pem /etc/docker/certs.d/10.64.3.7/ca.crt
+
+docker login 10.64.3.7
+# 认证信息自动保存到 ~/.docker/config.json 文件
+
+#   其它操作
+
+# 停止 harbor
+docker-compose down -v
+
+# 修改配置
+vi harbor.cfg
+
+# 更修改的配置更新到 docker-compose.yml 文件
+./prepare
+
+# 启动 harbor
+docker ps -a |grep ui
+docker rm xx
+docker-compose up -d
+
+# 把上一章的练习拿过来用一下
+
+docker pull registry.docker-cn.com/library/ubuntu:16.04
+
+vi /etc/docker/daemon.json增加如下内容
+{
+  "registry-mirrors": ["https://registry.docker-cn.com"]
+}
+
+# 保存配置后，重启Docker进行生效
