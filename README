@@ -924,7 +924,7 @@ mv v1.3.0.zip heapster-1.3.0
 
  #  配置 grafana-deployment
 
-cd heapster-1.3.0/deploy/kube-config/influxdb
+cd /root/heapster-1.3.0/deploy/kube-config/influxdb
 ls *.yaml
 
 heapster-rbac.yaml
@@ -1014,7 +1014,7 @@ kubectl get svc -n kube-system|grep influxdb
 http://10.64.3.7:8080/api/v1/proxy/namespaces/kube-system/services/monitoring-influxdb:8083/
 
 # 这一章,熟练度不够,回头找到文件还要再熟悉下
-# 部署完成,测试全失败,也可能是dns的故障
+# 部署完成,测试全失败
 
 
 
@@ -1022,6 +1022,9 @@ http://10.64.3.7:8080/api/v1/proxy/namespaces/kube-system/services/monitoring-in
 
 cd /root/kubernetes/cluster/addons/fluentd-elasticsearch
 ls *.yaml
+
+
+# 在配置文件里直接全路径也可以用
 
 touch es-rbac.yaml
 touch fluentd-es-rbac.yaml
@@ -1031,6 +1034,7 @@ touch fluentd-es-rbac.yaml
 vi es-controller.yaml
 # serviceAccountName: elasticsearch
 # 及镜像
+registry.cn-hangzhou.aliyuncs.com/google_images/elasticsearch:v2.4.1-2
 
 #   配置 es-service.yaml
 
@@ -1039,9 +1043,11 @@ vi es-controller.yaml
 vi fluentd-es-ds.yaml
 # serviceAccountName: fluentd
 # 及镜像
+registry.cn-hangzhou.aliyuncs.com/google_images/fluentd-elasticsearch:1.22
 
 #   配置 kibana-controller.yaml
 vi kibana-controller.yaml
+registry.cn-hangzhou.aliyuncs.com/google_images/kibana:v4.6.1-1
 
 #   给 Node 设置标签
 # DaemonSet fluentd-es-v1.22 只会调度到设置了标签 beta.kubernetes.io/fluentd-ds-ready=true 的 Node，
