@@ -1304,3 +1304,9 @@ vi /etc/docker/daemon.json增加如下内容
 }
 
 # 保存配置后，重启Docker进行生效
+
+
+
+# 检查方法
+kubectl logs kibana-logging-2887055332-9m8hb -n kube-system -f  
+# 查看日志
