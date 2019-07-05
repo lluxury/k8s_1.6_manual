@@ -1,0 +1,171 @@
+    查看系统信息：
+
+    curl 'http://elasticsearch-logging:9200/'
+    curl 'http://elasticsearch-logging:9200/?pretty'
+    curl -XGET 'http://elasticsearch-logging:9200/?pretty'
+     
+
+    集群(Cluster)相关：
+
+    查看集群概要信息：
+    curl -XGET 'http://elasticsearch-logging:9200/_cluster/stats?pretty'
+    
+    查看集群健康状态信息：
+    curl -XGET 'http://elasticsearch-logging:9200/_cluster/health?pretty'
+
+    查看集群设置信息：
+    curl -XGET 'http://elasticsearch-logging:9200/_cluster/settings?pretty'
+
+curl -XGET 'http://elasticsearch-logging:9200/_cluster/health?pretty'
+# "status" : "green",
+
+curl -XGET 'http://elasticsearch-logging:9200/_nodes/stats?pretty'
+#  "nodes" : {
+#    "3tvCG4A4S4KkXVZk317dFg" : {
+
+curl -XPOST 'elasticsearch-logging:9200/_cluster/reroute' -d '{
+        "commands" : [ {
+              "allocate" : {
+                  "index" : "xxxx",
+                  "shard" : 3,
+                  "node" : "3tvCG4A4S4KkXVZk317dFg",
+                  "allow_primary" : true
+              }
+            }
+        ]
+
+    }'
+#      shard：head中还存在的节点
+#       node：就是刚才红框中的id
+# 重新分配节点
+
+    关闭集群分片操作
+
+    1
+    curl -XPUT http://elasticsearch-logging:9200/_cluster/settings?pretty=1 -d '{"persistent":{"cluster.routing.allocation.enable": "none"}}'
+    开启集群分片操作
+
+    1
+    curl -XPUT http://elasticsearch-logging:9200/_cluster/settings?pretty=1 -d '{"persistent":{"cluster.routing.allocation.enable": "all"}}'
+    关闭集群分片自动均衡
+
+    1
+    curl -XPUT http://elasticsearch-logging:9200/_cluster/settings?pretty=1 -d '{"persistent":{"cluster.routing.rebalance.enable": "none"}}'
+    开启集群分片自动均衡(所有分片)
+
+    1
+    curl -XPUT http://elasticsearch-logging:9200/_cluster/settings?pretty=1 -d '{"persistent":{"cluster.routing.rebalance.enable": "all"}}'
+    开启集群分片自动均衡(近针对副本分片)
+
+    1
+    curl -XPUT http://elasticsearch-logging:9200/_cluster/settings?pretty=1 -d '{"persistent":{"cluster.routing.rebalance.enable": "replicas"}}'
+     
+
+    节点(Node)相关：
+
+    查看节点信息：
+
+    1
+    curl -XGET 'http://elasticsearch-logging:9200/_cat/nodes?v'
+    查看所有节点信息：
+
+    1
+    curl -XGET 'http://elasticsearch-logging:9200/_nodes?pretty=true'
+    查看指定节点(node-es-03)的信息：
+
+    1
+    curl -XGET 'http://elasticsearch-logging:9200/_nodes/node-es-03?pretty=true'
+     
+
+    索引(Indices)相关：
+
+    列出集群中所有的索引：
+
+    1
+    curl -XGET 'http://elasticsearch-logging:9200/_nodes/node-es-03?pretty=true'
+    查看指定索引(date.searchlog)的状态：
+
+    1
+    curl -XGET 'http://elasticsearch-logging:9200/logstash-bbl/_stats?pretty'
+    查看指定索引(date.searchlog)的结构：
+
+    1
+    curl -XGET 'http://elasticsearch-logging:9200/logstash-bbl?pretty'
+    查看指定索引(date.searchlog)的映射结构：
+
+    1
+    curl -XGET 'http://elasticsearch-logging:9200/logstash-bbl/_mapping?pretty'
+    创建新的索引：
+
+    1
+    2
+    3
+    4
+    5
+    6
+    7
+    8
+    9
+    10
+    curl -XPUT "http://elasticsearch-logging:9200/logstash-bbl?pretty" -d '
+    {
+    "settings" : {
+    "index" : {
+    "refresh_interval" : "5s",
+    "number_of_shards" : "1",
+    "number_of_replicas" : "1"
+    }
+    }
+    }'
+    删除指定的索引:
+
+    1
+    curl -XDELETE http://172.16.1.141:9200/logstash-bbl
+     
+
+    分片(Shards)相关：
+
+    查各节点中分片的分布情况：
+
+    1
+    curl -XGET 'http://elasticsearch-logging:9200/_cat/allocation?v'
+    查看集群中所有分片信息：
+
+    1
+    curl -XGET 'http://elasticsearch-logging:9200/_cat/shards?v'
+    查看指定分片信息：
+
+    1
+    curl -XGET http://elasticsearch-logging:9200/_cat/shards/statistics?v
+    迁移分片：
+
+    1
+    2
+    3
+    4
+    5
+    6
+    7
+    8
+    9
+    node-es-04 --> storage.track(3) --> node-es-01
+    curl -XPOST 'http://elasticsearch-logging:9200/_cluster/reroute' -d '{
+    "commands":[{
+    "move":{
+    "index":"logstash-bbl",
+    "shard":0,
+    "from_node":"node-es-04",
+    "to_node":"node-es-01"
+    }}]}'
+    删除副本分片：
+
+    1
+    2
+    3
+    4
+    5
+    curl -XPUT "http://elasticsearch-logging:9200/logstash-bbl/_settings?pretty=1" -d '{
+    "index" :{
+    "number_of_replicas" : 1
+    }
+    }'

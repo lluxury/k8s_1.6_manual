@@ -11,9 +11,10 @@ spec:
         task: monitoring
         k8s-app: heapster
     spec:
+      serviceAccountName: heapster
       containers:
       - name: heapster
-        image: lvanneo/heapster-amd64:v1.3.0-beta.1
+        image: registry.cn-hangzhou.aliyuncs.com/magina-k8s/heapster-amd64:v1.3.0
         imagePullPolicy: IfNotPresent
         command:
         - /heapster

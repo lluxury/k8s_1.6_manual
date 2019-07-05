@@ -1,0 +1,249 @@
+
+# 一个外部的business-manager请求，首先进入集群的入口（ingress），
+# ingress反向代理后负载到business-manager的service。Service层再负载到某个node下的具体的business-manager pod
+
+# Business-manager pod再将请求发往data-product的service，同理，service层继续随机选择一个data-product的Pod来接收请求
+
+# 容器的网络-docker0
+# 跨主机通讯-flannel
+# ingress
+# service
+# DNS
+
+# 物理 192.168.0.xx
+# ingress->nginx
+# service->kube-proxy
+# 网络->flannel
+
+# Node ip：宿主机的ip                              192.168.0.21
+
+# Pod ip pod子网的ip                               172.30.76.4
+#     docker0网桥隔离的pod子网的ip
+
+# Cluster ip：vip                                  10.254.80.22
+#     k8s分配给每个service的全局唯一的虚拟ip
+#     没有挂接到网络设备，不能直接访问
+
+
+# 每个pod具备不同的Ip
+# 不同node下的pod甚至在不同的网段
+
+# K8s在每个宿主机 node 上建立 docker0网桥,容器的网关指向这个网桥
+# Flannel则在每个宿主机上创建了一个VTEP 虚拟隧道端点设备flannel.1
+
+route
+
+172.30.0.0      0.0.0.0         255.255.0.0     U     0      0        0 flannel.1
+172.30.95.0     0.0.0.0         255.255.255.0   U     0      0        0 docker0   # node本机
+
+# 请求，首先到达node1-docker0网桥，目的地址是172.30.99.2，只能匹配第2条规则，请求被交给node1-flannel.1设备
+
+
+ip neigh show dev flannel.1
+
+172.30.99.4 lladdr 4e:f7:d2:16:8f:28 REACHABLE
+172.30.99.2 lladdr 4e:f7:d2:16:8f:28 STALE
+172.30.99.3 lladdr 4e:f7:d2:16:8f:28 REACHABLE
+172.30.99.0 lladdr 4e:f7:d2:16:8f:28 STALE
+# node1-flannel.1的ARP表记录的是ip和对应节点上的flannel.1设备mac的映射, 发往对应mac设备
+
+
+bridge fdb show flannel.1|grep 4e:f7:d2:16:8f:28
+
+4e:f7:d2:16:8f:28 dev flannel.1 dst 10.64.3.8 self permanent
+# node1-flannel.1设备扮演一个网桥的角色，node1上查询出的桥接规则,目的ip对应 node2 ip
+
+# 随着node和pod加入和退出集群，flannel进程会从ETCD感知相应的变化，并及时更新规则
+# 通过ip访问pod，pod的ip随着k8s调度会变化,继续分析
+
+
+
+
+# 基于 IP 访问
+# pod的ip不是固定的，而且同一服务的多个pod需要有负载均衡
+# service不是真实存在的,没有挂接具体的网络设备
+
+# Service是由kube-proxy组件和iptables来共同实现的
+
+# 内核在解析网络层ip数据包时，会加入相应的检查点，匹配iptables定义的规则
+
+iptables-save
+
+# 对应服务
+my-nginx     10.254.181.37   <none>        80/TCP        8d
+
+# 对应规则
+-A KUBE-SEP-5G562LVA4CAAOKIR -s 172.30.95.5/32 -m comment --comment "default/my-nginx:" -j KUBE-MARK-MASQ
+-A KUBE-SEP-5G562LVA4CAAOKIR -p tcp -m comment --comment "default/my-nginx:" -m tcp -j DNAT --to-destination 172.30.95.5:80
+
+-A KUBE-SEP-JV3OKE7V7DBE43IE -s 172.30.95.3/32 -m comment --comment "default/my-nginx:" -j KUBE-MARK-MASQ
+-A KUBE-SEP-JV3OKE7V7DBE43IE -p tcp -m comment --comment "default/my-nginx:" -m tcp -j DNAT --to-destination 172.30.95.3:80
+# 给转发的数据包加标签Mark，数据包从哪进来的就从哪个node返回给客户端
+# 经过service转发的数据包，pod只能追查到转发的service所在的Node
+# 需要Pod明确知道外部client的源Ip，可以借用service的spec.externalTrafficPolicy=local字段实现
+
+# 数据包转发给172.30.95.3:80 cc0p3的pod，这里已经拿到pod的ip和port，可以通过docker0和flannel.1网络进行通信了
+
+
+
+-A KUBE-SERVICES ! -s 172.30.0.0/16 -d 10.254.181.37/32 -p tcp -m comment --comment "default/my-nginx: cluster IP" -m tcp --dport 80 -j KUBE-MARK-MASQ
+-A KUBE-SERVICES -d 10.254.181.37/32 -p tcp -m comment --comment "default/my-nginx: cluster IP" -m tcp --dport 80 -j KUBE-SVC-BEPXDJBUHFCSYIC3
+
+-A KUBE-SVC-BEPXDJBUHFCSYIC3 -m comment --comment "default/my-nginx:" -m statistic --mode random --probability 0.50000000000 -j KUBE-SEP-JV3OKE7V7DBE43IE
+-A KUBE-SVC-BEPXDJBUHFCSYIC3 -m comment --comment "default/my-nginx:" -j KUBE-SEP-5G562LVA4CAAOKIR
+# 规则链,采用随机模式 --mode random
+# iptables是顺序往下匹配的, 上一条不中,就中下一条了
+
+# 11版本 改用 IPVS, 再去观察下
+# kube-proxy负责感知集群的变化，及时更新service的规则
+
+
+
+
+# 基于服务名访问
+kubectl get po -n kube-system
+kubectl exec nginx-ds-0zfzz -it -- /bin/bash
+
+cat /etc/resolv.conf
+ping kubernetes.default.svc.cluster.local
+
+# 服务的完整域名 [服务名].[命名空间].svc.[集群名称]
+# 每个pod也有类似规则的域名
+
+
+
+
+# 外部访问service
+# 出了集群ip:port没什么意义
+
+# 1 配置service的type=NodePort
+     # kube-proxy在iptables里增加一条规则，将外部端口的包service规则去处理
+
+# 2 type=LoadBalancer 公有云提供的K8s环境,K8s使用一个叫作CloudProvider的转接层与公有云的API交互
+
+# 3 type=ExternalName 未知
+
+
+
+
+
+# ingress
+# 全局的负载均衡器来管理后面服务
+
+# 创建ingress对象
+# 安装ingress-controller
+# 安装之后，会增加一个ingress-nginx命名空间,运行nginx-ingress-controller
+# 安装时还需要创建一个服务，将这个pod里的nginx服务监听的80和443端口暴露出去
+
+kubectl exec -ti nginx-ingress-controller-546bfbff9-hpwsz sh -n ingress-nginx
+kubectl describe svc ingress-nginx -n ingress-nginx
+# 当ingress对象被更新时，nginx-ingress-controller会实现nginx服务的动态更新 ?
+
+
+# DB的ip和端口是配置在每个应用的configmap里的,db修改需要依次该应用
+# 指定service的endpoints为一个特定的点,创建两个service：service-DB-read，和service-DB-write
+# Endpoints:         192.168.0.103:3306
+
+
+
+
+
+
+
+# calico网络原理及与flannel对比
+# calico 包含Felix，etcd，BGP Client，BGP Route Reflector
+# Felix：主要负责路由配置以及ACLS规则的配置以及下发，它存在在每个node节点上。
+
+# etcd：分布式键值存储，主要负责网络元数据一致性，确保Calico网络状态的准确性，可以与kubernetes共用；
+
+# BGPClient(BIRD), 主要负责把 Felix写入 kernel的路由信息分发到当前 Calico网络，确保 workload间的通信的有效性；
+
+# BGPRoute Reflector(BIRD), 大规模部署时使用，摒弃所有节点互联的mesh模式，通过一个或者多个 BGPRoute Reflector 来完成集中式的路由分发；
+
+# 从源容器经过源宿主机，经过数据中心的路由，然后到达目的宿主机最后分配到目的容器
+# 整个过程中始终都是根据iptables规则进行路由转发，并没有进行封包，解包
+
+
+# 源容器发出 主机 docker0 转发到 flannel0网卡, etcd节点间路由表, 另一node的flannel 接受 udp封包, 解包, 转docker0,去容器
+
+
+
+
+
+
+# 外部网络访问cluster IP
+# 修改master的/etc/kubernetes/proxy，
+# 把KUBE_PROXY_ARGS=”“改为KUBE_PROXY_ARGS=”–proxy-mode=userspace” 
+# 重启kube-proxy服务 
+# 在核心路由设备或者源主机上添加一条路由，访问cluster IP段的路由指向到master上
+# kubernetes版本小于1.2时，直接添加路由
+
+
+
+# kube-proxy转发的两种模式
+# 每个Service都会在所有的Kube-proxy节点上体现
+# 实现了内部从pod到service 和 外部的从node port向service的访问
+
+# kube-proxy在转发时主要有两种模式Userspace和Iptables
+    # userspace 是在用户空间，通过kuber-proxy实现LB的代理服务
+    # K8S1.2版本之后，kube-proxy默认方式。
+    # 所有转发都是通过Iptables内核模块实现，而kube-proxy只负责生成相应的Iptables规则
+
+
+# 转发K8S后端服务的四种方式
+ClusterIP 集群内部的虚拟IP
+    # apiserver：在创建service时，apiserver接收到请求以后将数据存储到etcd中
+    # kube-proxy：k8s的每个节点中都有该进程，负责实现service功能，这个进程负责感知service，pod的变化，并将变化的信息写入本地的iptables中
+    # iptables：使用NAT等技术将virtualIP的流量转至endpoint中
+
+NodePort
+# 除了使用cluster ip外，也将service的port映射到每个node的一个指定内部port上，映射的每个node的内部port都一样
+# 内部通过clusterip方式访问，外部通过nodeport方式访问
+
+loadbalance
+# LoadBalancer在NodePort基础上，K8S可以请求底层云平台创建一个负载均衡器，将每个Node作为后端，进行服务分发。该模式需要底层云平台（例如GCE）支持
+
+Ingress
+# Ingress，是一种HTTP方式的路由转发机制，由Ingress Controller和HTTP代理服务器组合而成
+# Ingress Controller实时监控Kubernetes API，实时更新HTTP代理服务器的转发规则
+# HTTP代理服务器有GCE Load-Balancer、HaProxy、Nginx等开源方案
+
+
+# service的三种端口
+port
+# service暴露在cluster ip上的端口，:port 是提供给集群内部客户访问service的入口
+
+nodePort
+# nodePort是k8s提供给集群外部客户访问service入口的一种方式，:nodePort 是提供给集群外部客户访问service的入口
+
+targetPort
+# targetPort是pod上的端口，从port和nodePort上到来的数据最终经过kube-proxy流入到后端pod的targetPort上进入容器
+
+
+# port和nodePort都是service的端口，前者暴露给集群内客户访问服务，后者暴露给集群外客户访问服务
+# 这两个端口到来的数据都需要经过反向代理kube-proxy流入后端pod的targetPod，从而到达pod上的容器内
+
+
+
+
+
+# 自建服务 test2
+-A KUBE-NODEPORTS -p tcp -m comment --comment "default/test2:s-tcp" -m tcp --dport 8582 -j KUBE-MARK-MASQ
+-A KUBE-NODEPORTS -p tcp -m comment --comment "default/test2:s-tcp" -m tcp --dport 8582 -j KUBE-SVC-ZW7I5FTP5PMPGBYR
+
+# 进入到以下链
+# KUBE-SVC-ZW7I5FTP5PMPGBYR
+-A KUBE-SVC-ZW7I5FTP5PMPGBYR -m comment --comment "default/test2:s-tcp" -m statistic --mode random --probability 0.50000000000 -j KUBE-SEP-RP3UHI47J2AQ4C4J
+-A KUBE-SVC-ZW7I5FTP5PMPGBYR -m comment --comment "default/test2:s-tcp" -j KUBE-SEP-ENGE4NTTPOCL3P3Y
+
+# KUBE-SEP-ENGE4NTTPOCL3P3Y
+-A KUBE-SEP-ENGE4NTTPOCL3P3Y -s 172.30.99.2/32 -m comment --comment "default/test2:s-tcp" -j KUBE-MARK-MASQ
+-A KUBE-SEP-ENGE4NTTPOCL3P3Y -p tcp -m comment --comment "default/test2:s-tcp" -m tcp -j DNAT --to-destination 172.30.99.2:80
+# 发送到POD 172.30.99.2 的 80 端口
+# 标记节点, 到服务,转pod
+
+
+# clusterIP的访问方式
+-A KUBE-SERVICES ! -s 172.30.0.0/16 -d 10.254.114.186/32 -p tcp -m comment --comment "default/test2:s-tcp cluster IP" -m tcp --dport 8582 -j KUBE-MARK-MASQ
+-A KUBE-SERVICES -d 10.254.114.186/32 -p tcp -m comment --comment "default/test2:s-tcp cluster IP" -m tcp --dport 8582 -j KUBE-SVC-ZW7I5FTP5PMPGBYR
+# test2        10.254.114.186   <nodes>       8582:8582/TCP   1h        app=nginx-ds

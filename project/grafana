@@ -1,0 +1,10 @@
+
+wget https://s3-us-west-2.amazonaws.com/grafana-releases/release/grafana_4.4.3_amd64.deb 
+sudo dpkg -i grafana_4.4.3_amd64.deb
+
+sudo grafana-cli plugins install grafana-piechart-panel
+
+cd /var/lib/grafana/plugins/
+sudo git clone https://github.com/aliyun/aliyun-log-grafana-datasource-plugin
+service grafana-server restart
+

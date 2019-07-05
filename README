@@ -28,7 +28,18 @@
     cp environment.sh /root/local/bin
     # x3 
 
+SERVICE_CIDR
+CLUSTER_CIDR
+# 重要,定义2个基础网络
+
+
+
+
     # 创建 CA 证书和秘钥
+# CloudFlare 公司的一个 PKI工具
+#   生成证书
+#   构建Json生成证书
+#   查看证书信息
 
 yum -y install ntp && ntpdate -u cn.pool.ntp.org
 
@@ -50,20 +61,23 @@ cd /root
     export PATH=/root/local/bin:$PATH
     mkdir ssl
     cd ssl
-# 这个应该长久变量吧?
 
 # 生成模板
+
 # 生成证书信息文件
     cfssl print-defaults config > config.json
     cfssl print-defaults csr > csr.json
-# CloudFlare 公司的一个 PKI 工具,json 生成 证书
+# 模板及证书文件
 
-# https://www.cnblogs.com/fanqisoft/p/10765038.html
-# 待验证
 
     #   创建 CA
     # 创建 CA 配置文件
+
     ca-config.json
+# ca-config.json：可以定义多个 profiles，分别指定不同的过期时间、使用场景等参数；后续在签名证书时使用某个 profile；
+# signing：表示该证书可用于签名其它证书；生成的 ca.pem 证书中 CA=TRUE；
+# server auth：表示 client 可以用该 CA 对 server 提供的证书进行验证；
+# client auth：表示 server 可以用该 CA 对 client 提供的证书进行验证；
 
     # 创建 CA 证书签名请求
     ca-csr.json
@@ -140,7 +154,7 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
     sudo mv etcd-v3.1.6-linux-amd64/etcd* /root/local/bin
 
     #   创建 TLS 秘钥和证书
-    # 创建 etcd 证书签名请求
+    # 分别创建 etcd 证书签名请求
 
     cd /root
     mkdir ssl
@@ -166,7 +180,18 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
 
     #   创建 etcd 的 systemd unit 文件
     sudo mkdir -p /var/lib/etcd 
+    
     etcd.service
+# 这是一个很好的做法,脚本不动, 改变部分用环境变量处理,下同
+# ${NODE_IP}
+
+# /var/lib/etcd
+# etcd 的公私钥                 cert-file和key-file
+# Peers 通信的公私钥和 CA 证书  peer-cert-file、peer-key-file、peer-trusted-ca-file
+# 客户端的CA证书                trusted-ca-file
+
+# --initial-cluster-state 值为 new 时，--name 的参数值必须位于 --initial-cluster 列表中；
+
 
     #   启动 etcd 服务
     firewall-cmd --zone=public --add-port=2379/tcp --permanent
@@ -194,8 +219,10 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
 
 
 
+
 # 下载和配置 Kubectl 命令行工具
     # kubectl 默认从 ~/.kube/config 配置文件获取访问 kube-apiserver 地址、证书、用户名等信息
+ls ~/.kube/config
 
     # 需要将下载的 kubectl 二进制程序和生成的 ~/.kube/config 配置文件拷贝到所有使用 kubectl 命令的机器
     # 这样看来,配置应该是拷贝的,不知道证书怎么做,只要一个,还是分别生成?防火墙
@@ -228,6 +255,17 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
     sudo mv admin*.pem /etc/kubernetes/ssl/
     rm admin.csr admin-csr.json
 
+# kube-apiserver 使用 RBAC 对客户端(如 kubelet、kube-proxy、Pod)请求进行授权；
+
+# kube-apiserver 预定义了一些 RBAC 使用的 RoleBindings，
+# 如 cluster-admin 将 Group system:masters 与 Role cluster-admin 绑定，该 Role 授予了调用kube-apiserver 所有 API的权限；
+
+# 指定该证书的 Group 为 system:masters，kubelet 使用该证书访问 kube-apiserver 时 ，由于证书被 CA 签名，所以认证通过，
+# 同时由于证书用户组为经过预授权的 system:masters，所以被授予访问所有 API 的权限；
+
+# hosts 属性值为空列表；
+
+
     #   创建 kubectl kubeconfig 文件
     # 设置集群参数
     kubectl config set-cluster kubernetes \
@@ -254,16 +292,21 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
 
     # 三段配置+激活,生成文件写有密钥
 
+# admin.pem 证书 O 字段值为 system:masters，
+# kube-apiserver 预定义的 RoleBinding cluster-admin 将 Group system:masters 与 Role cluster-admin 绑定，
+# 该 Role 授予了调用kube-apiserver 相关 API 的权限；
+
+# 生成的 kubeconfig 被保存到 ~/.kube/config 文件
+
     mkdir .kube
     cd !$
     scp root@10.64.3.7:/root/.kube/config .
-
-    # kubectl api-versions 目前不可用
-
     # 使用 kubectl  的机器都需要
 
 
-    # 配置 Flannel 网络 三端都要
+
+
+    # 配置 Flannel 网络 三台都要
     # kubernetes 要求集群内各节点能通过 Pod 网段互联互通，使用 Flannel 在所有节点 (Master、Node) 上创建互联互通的 Pod 网段
     #   使用的变量 
     export NODE_IP=10.64.3.7
@@ -290,7 +333,7 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
      # 证书里ip倒是没有,先分别建吧
 
     #   向 etcd 写入集群 Pod 网段信息
-    # 只需在第一次部署 Flannel 网络时执行，后续在其它节点上部署 Flannel 时无需再写入该信息！
+# 只需在第一次部署 Flannel 网络时执行，后续在其它节点上部署 Flannel 时无需再写入该信息！
 
     /root/local/bin/etcdctl \
       --endpoints=${ETCD_ENDPOINTS} \
@@ -317,6 +360,8 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
       # --iface=ens33
     flanneld.service
 
+# /run/flannel/docker
+# --iface 选项值指定通信接口
 
     #     启动 flanneld
     sudo cp flanneld.service /etc/systemd/system/
@@ -392,6 +437,17 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
 
 
     # 部署 Master 节点
+
+# kube-apiserver
+# kube-scheduler
+# kube-controller-manager
+
+# kube-scheduler、kube-controller-manager 和 kube-apiserver 三者的功能紧密相关；
+# 同时只能有一个 kube-scheduler、kube-controller-manager 进程处于工作状态，如果运行多个，则需要通过选举产生一个 leader
+
+# master 节点与 node 节点上的 Pods 通过 Pod 网络通信，所以需要在 master 节点上部署 Flannel 网络
+
+
     #   使用的变量
     export MASTER_IP=10.64.3.7
     source /root/local/bin/environment.sh
@@ -424,6 +480,12 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
     cd ~/ssl
     kubernetes-csr.json
 
+# 如果 hosts 字段不为空则需要指定授权使用该证书的 IP 或域名列表，分别指定当前部署的 master 节点主机 IP；
+
+# 还需要添加 kube-apiserver 注册的名为 kubernetes 的服务 IP (Service Cluster IP)，
+# 一般是 kube-apiserver --service-cluster-ip-range 选项值指定的网段的第一个IP，如 "10.254.0.1"；
+
+
     firewall-cmd --zone=public --add-port=6443/tcp --permanent
     firewall-cmd --reload
 
@@ -455,6 +517,32 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
     #     创建 kube-apiserver 的 systemd unit 文件
 
     kube-apiserver.service
+
+# kube-apiserver 1.6 版本开始使用 etcd v3 API 和存储格式；
+
+# 指定在安全端口使用 RBAC 授权模式，拒绝未通过授权的请求；
+--authorization-mode=RBAC 
+
+# kube-scheduler、kube-controller-manager 一般和 kube-apiserver 部署在同一台机器上，它们使用非安全端口和 kube-apiserver通信;
+
+# kubelet、kube-proxy、kubectl 部署在其它 Node 节点上，
+# 如果通过安全端口访问 kube-apiserver，则必须先通过 TLS 证书认证，再通过 RBAC 授权；
+
+# kube-proxy、kubectl 通过在使用的证书里指定相关的 User、Group 来达到通过 RBAC 授权的目的；
+
+# 如果使用了 kubelet TLS Boostrap 机制，
+# 则不能再指定 --kubelet-certificate-authority、--kubelet-client-certificate 和 --kubelet-client-key 选项，
+# 否则后续 kube-apiserver 校验 kubelet 证书时出现 ”x509: certificate signed by unknown authority“ 错误；
+
+# --admission-control 值必须包含 ServiceAccount，否则部署集群插件时会失败；
+# --bind-address 不能为 127.0.0.1；
+# --service-cluster-ip-range 指定 Service Cluster IP 地址段，该地址段不能路由可达；
+# --service-node-port-range=${NODE_PORT_RANGE} 指定 NodePort 的端口范围；
+
+# 缺省情况下 kubernetes 对象保存在 etcd /registry 路径下，可以通过 --etcd-prefix 参数进行调整
+
+# 有很多参数,根据需要仔细调节,不过可以做模板化,只改变量
+
     #     启动 kube-apiserver
     sudo cp kube-apiserver.service /etc/systemd/system/
     sudo systemctl daemon-reload
@@ -463,17 +551,26 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
     sudo systemctl status kube-apiserver
 
 
-    # 如果使用了 kubelet TLS Boostrap 机制，
-    # 则不能再指定 --kubelet-certificate-authority、--kubelet-client-certificate 和 --kubelet-client-key 选项，
-    # 否则后续 kube-apiserver 校验 kubelet 证书时出现 ”x509: certificate signed by unknown authority“ 错误；
-    # 不是很明白
 
 
 
     #   配置和启动 kube-controller-manager
     #     创建 kube-controller-manager 的 systemd unit 文件
+
     kube-controller-manager.service
-    # kubectl get componentstatuses
+    kubectl get componentstatuses
+    # --address 值必须为 127.0.0.1，因为当前 kube-apiserver 期望 scheduler 和 controller-manager 在同一台机器
+# --master=http://{MASTER_IP}:8080：使用非安全 8080 端口与 kube-apiserver 通信；
+
+# --cluster-cidr 指定 Cluster 中 Pod 的 CIDR 范围，该网段在各 Node 间必须路由可达(flanneld保证)；
+
+# --service-cluster-ip-range 参数指定 Cluster 中 Service 的CIDR范围，该网络在各 Node 间必须路由不可达，必须和 kube-apiserver 中的参数一致；
+
+# --cluster-signing-* 指定的证书和私钥文件用来签名为 TLS BootStrap 创建的证书和私钥；
+
+# --root-ca-file 用来对 kube-apiserver 证书进行校验，指定该参数后，才会在Pod 容器的 ServiceAccount 中放置该 CA 证书文件；
+
+# --leader-elect=true 部署多台机器组成的 master 集群时选举产生一处于工作状态的 kube-controller-manager 进程；
 
     #     启动 kube-controller-manager
     sudo cp kube-controller-manager.service /etc/systemd/system/
@@ -481,9 +578,15 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
     sudo systemctl enable kube-controller-manager
     sudo systemctl start kube-controller-manager
 
+
+
     #   配置和启动 kube-scheduler
     #     创建 kube-scheduler 的 systemd unit 文件
     kube-scheduler.service
+
+# --address 值必须为 127.0.0.1，因为当前 kube-apiserver 期望 scheduler 和 controller-manager 在同一台机器；
+# --master=http://{MASTER_IP}:8080：使用非安全 8080 端口与 kube-apiserver 通信；
+# --leader-elect=true 部署多台机器组成的 master 集群时选举产生一处于工作状态的 kube-controller-manager 进程
 
     #     启动 kube-scheduler
     sudo cp kube-scheduler.service /etc/systemd/system/
@@ -526,7 +629,8 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
 
     # dockerd 运行时会调用其它 docker 命令，如 docker-proxy，所以需要将 docker 命令所在的目录加到 PATH 环境变量中；
 
-    # flanneld 启动时将网络配置写入到 /run/flannel/docker 文件中的变量 DOCKER_NETWORK_OPTIONS，dockerd 命令行上指定该变量值来设置 docker0 网桥参数；
+    # flanneld 启动时将网络配置写入到 /run/flannel/docker 文件中的变量 DOCKER_NETWORK_OPTIONS，
+    # dockerd 命令行上指定该变量值来设置 docker0 网桥参数；
 
     # 如果指定了多个 EnvironmentFile 选项，则必须将 /run/flannel/docker 放在最后(确保 docker0 使用 flanneld 生成的 bip 参数)；
 
@@ -556,14 +660,17 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
     }
     EOF
 
+# registry.cn-hangzhou.aliyuncs.com
 
     #     启动 dockerd
     cd ~
     sudo cp docker.service /etc/systemd/system/docker.service
     sudo systemctl daemon-reload
+
     sudo systemctl stop firewalld
     sudo systemctl disable firewalld
     sudo iptables -F && sudo iptables -X && sudo iptables -F -t nat && sudo iptables -X -t nat
+    
     sudo systemctl enable docker
     sudo systemctl start docker
 
@@ -574,6 +681,15 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
     # 需要先将 bootstrap token 文件中的 kubelet-bootstrap 用户赋予 system:node-bootstrapper 角色，
     # 然后 kubelet 才有权限创建认证请求(certificatesigningrequests)
 
+
+参数配置错误
+cd /etc/systemd/system/
+vi docker.service
+
+sudo systemctl stop docker
+systemctl daemon-reload
+sudo systemctl start docker
+sudo systemctl status docker
 
 
     # #     下载最新的 kubelet 和 kube-proxy 二进制文件 master已有
@@ -635,6 +751,28 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
     sudo mkdir /var/lib/kubelet 
     kubelet.service
 
+# --address 不能设置为 127.0.0.1，否则后续 Pods 访问 kubelet 的 API 接口时会失败，
+# 因为 Pods 访问的 127.0.0.1 指向自己而不是 kubelet；
+
+# 如果设置了 --hostname-override 选项，则 kube-proxy 也需要设置该选项，否则会出现找不到 Node 的情况；
+
+# --experimental-bootstrap-kubeconfig 指向 bootstrap kubeconfig 文件，
+# kubelet 使用该文件中的用户名和 token 向 kube-apiserver 发送 TLS Bootstrapping 请求；
+
+# 管理员通过了 CSR 请求后，kubelet 自动在 --cert-dir 目录创建证书和私钥文件(kubelet-client.crt 和 kubelet-client.key)，
+# 然后写入 --kubeconfig 文件(自动创建 --kubeconfig 指定的文件)；
+
+# 建议在 --kubeconfig 配置文件中指定 kube-apiserver 地址，
+# 如果未指定 --api-servers 选项，则必须指定 --require-kubeconfig 选项后才从配置文件中读取 kue-apiserver 的地址，
+# 否则 kubelet 启动后将找不到 kube-apiserver (日志中提示未找到 API Server），kubectl get nodes 不会返回对应的 Node 信息;
+
+# --cluster-dns 指定 kubedns 的 Service IP(可以先分配，后续创建 kubedns 服务时指定该 IP)，
+# --cluster-domain 指定域名后缀，这两个参数同时指定后才会生效；
+
+# kubelet cAdvisor 默认在所有接口监听 4194 端口的请求，对于有外网的机器来说不安全，
+# ExecStartPost 选项指定的 iptables 规则只允许内网机器访问 4194 端口；
+
+
     cd /etc/kubernetes/
     scp root@10.64.3.7:/etc/kubernetes/bootstrap.kubeconfig .
     cd /root
@@ -675,6 +813,12 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
     #     创建 kube-proxy 证书
     cd /root/ssl
     kube-proxy-csr.json
+
+    # CN 指定该证书的 User 为 system:kube-proxy；
+    # kube-apiserver 预定义的 RoleBinding system:node-proxier 将User system:kube-proxy 与 Role system:node-proxier 绑定，
+    # 该 Role 授予了调用 kube-apiserver Proxy 相关 API 的权限；
+
+    # hosts 属性值为空列表；
 
      cfssl gencert -ca=/etc/kubernetes/ssl/ca.pem \
      -ca-key=/etc/kubernetes/ssl/ca-key.pem \
@@ -717,8 +861,12 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
 
     # 这个还是每台要配置的,因为证书不一样
 
-    # 设置集群参数和客户端认证参数时 --embed-certs 都为 true，这会将 certificate-authority、client-certificate 和 client-key 指向的证书文件内容写入到生成的 kube-proxy.kubeconfig 文件中；
-    # kube-proxy.pem 证书中 CN 为 system:kube-proxy，kube-apiserver 预定义的 RoleBinding cluster-admin 将User system:kube-proxy 与 Role system:node-proxier 绑定，该 Role 授予了调用 kube-apiserver Proxy 相关 API 的权限
+    # 设置集群参数和客户端认证参数时 --embed-certs 都为 true，
+    # 这会将 certificate-authority、client-certificate 和 client-key 指向的证书文件内容写入到生成的 kube-proxy.kubeconfig 文件中；
+
+    # kube-proxy.pem 证书中 CN 为 system:kube-proxy，
+    # kube-apiserver 预定义的 RoleBinding cluster-admin 将User system:kube-proxy 与 Role system:node-proxier 绑定，
+    # 该 Role 授予了调用 kube-apiserver Proxy 相关 API 的权限
 
     #     创建 kube-proxy 的 systemd unit 文件
     sudo mkdir -p /var/lib/kube-proxy 
@@ -765,7 +913,22 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
     curl ${NODE_IP}:${NODE_PORT}
     # ok
 
+# 自定义输出结果
+kubectl get pods --all-namespaces -o go-template='{{range .items}}{{.metadata.uid}}{{end}}'
+kubectl get pods --all-namespaces -o go-template --template='{{range .items}}{{printf "|%-20s|%-50s|%-30s|\n" .metadata.namespace .metadata.name .metadata.uid}}{{end}}'
+kubectl get pods --all-namespaces -o go-template --template='{{range .items}}{{range .spec.containers}}{{printf "%s\n" .image}}{{end}}{{end}}'
+# 列出所有不可调度节点的节点名与 IP
+kubectl get no -o go-template='{{range .items}}{{if .spec.unschedulable}}{{.metadata.name}} {{.spec.externalID}}{{"\n"}}{{end}}{{end}}'
+kubectl -n kube-system get pods coredns-64b597b598-7547d -o custom-columns=NAME:.metadata.name,hostip:.status.hostIP
 
+cat > test.tmpl << EOF 
+NAME                      HOSTIP
+metadata.name       status.hostIP
+EOF
+
+kubectl -n kube-system get pods coredns-64b597b598-7547d -o custom-columns-file=test.tmpl
+
+# 内部通过clusterip方式访问，外部通过nodeport方式访问
 
 
     # 部署 DNS 插件
@@ -850,6 +1013,26 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
 # Failed to pull image "rosskukulinski/dne:v1.0.0": rpc error: code = 2 desc = Error response from daemon: {"message":"repository rosskukulinski/dne not found: does not exist or no pull access"}
 # Error syncing pod, skipping: failed to "StartContainer" for "fail" with ErrImagePull: "rpc error: code = 2 desc = Error response from daemon: {\"message\":\"repository rosskukulinski/dne not found: does not exist or no pull access\"}"
 
+# k8s将Service的名称当做域名注册到kube-dns中，通过Service的名称就可以访问其提供的服务
+
+iptables -P FORWARD ACCEPT
+
+# https://github.com/opsnull/follow-me-install-kubernetes-cluster/issues/139
+# 正常状态是, 跨node pod互通, 每个node上有一个dns ? dns的pod由3个容器组成
+
+kubectl exec -n kube-system -ti kube-dns-v20-xxxxx -c healthz -- nslookup kube-dns.kube-system.svc.cluster.local
+kubectl exec -n kube-system -ti kube-dns-v20-xxxxx -c healthz -- nslookup kube-dns
+
+
+# 集群内访问集群外
+    # 集群内的Pod会继承Node上的DNS解析规则
+    # ExternalName类型的Service，可以与一个公网域名绑定，通过该Service可以访问对应公网服务
+
+# 集群外访问集群内
+    # Service设置为NodePort类型 Node的IP + Service Port
+    # 通过kube-proxy可以对外暴露集群内的服务
+    # 根据实际情况在集群内自定义实现反向代理,?
+
 
 # 部署 Dashboard 插件
     cd /root/kubernetes/cluster/addons/dashboard
@@ -906,11 +1089,14 @@ cfssl gencert -initca ca-csr.json | cfssljson -bare ca
     # 成功
 
     openssl pkcs12 -export -in admin.pem  -out admin.p12 -inkey admin-key.pem
-    # 失败,无法查看
-    kubectl describe pods kubernetes-dashboard-3677875397-lp5hv --namespace=kube-system
+    # 失败,无法查看, 不明
+
+kubectl describe pods kubernetes-dashboard-3677875397-gv1s4 --namespace=kube-system
      # restart the nodes. (vagrant halt && vagrant up) restarting all minions
 
     # 缺少 Heapster 插件，当前 dashboard 不能展示 Pod、Nodes 的 CPU、内存等 metric 图形
+
+
 
 
 
@@ -930,6 +1116,7 @@ ls *.yaml
 heapster-rbac.yaml
 influxdb-cm.yaml
 # 很长的配置,有机会学习一下
+
 
 grafana-deployment.yaml
 # 如果后续使用 kube-apiserver 或者 kubectl proxy 访问 grafana dashboard，
@@ -1016,6 +1203,45 @@ http://10.64.3.7:8080/api/v1/proxy/namespaces/kube-system/services/monitoring-in
 # 这一章,熟练度不够,回头找到文件还要再熟悉下
 # 部署完成,测试全失败
 
+# Failed to list *api.Namespace: the server does not allow access to the requested resource (get namespaces)
+
+# 配置数据源
+# 名字,类型, http配置,http 认证,InfluxDB Details 库名, 用户密码
+
+# 创建graph，切换编辑模式“Toggle Edit Mode”, 然后输入自定义SQL查询
+
+SELECT derivative("value") AS "value" FROM "interface_rx" WHERE "host" = 'k8sslave04' AND "type" = 'if_octets' AND "instance" = 'eno16777984'
+# 函数 derivative 意为导数, 微积分中的概念
+
+# 系统负载
+SELECT mean("value") FROM "load_longterm" WHERE "host" = 'k8sslave04' AND $timeFilter GROUP BY time($interval) fill(null)
+SELECT mean("value") FROM "load_midterm" WHERE "host" = 'k8sslave04' AND $timeFilter GROUP BY time($interval) fill(null)
+SELECT mean("value") FROM "load_shortterm" WHERE "host" = 'k8sslave04' AND $timeFilter GROUP BY time($interval) fill(null)
+
+# 内存用量
+SELECT mean("value") FROM "memory_value" WHERE "type_instance" = 'used' AND $timeFilter GROUP BY time($interval) fill(null)
+
+# RestAPI操作
+# 创建数据库
+curl -i -XPOST http://influxdb-ip:8086/query --data-urlencode "q=CREATE DATABASE test"
+
+# 写入单条数据
+curl -i -XPOST 'http://influxdb-ip:8086/write?db=test' --data-binary 'cpu_load_short,host=server01,region=us-west value=0.64 1434055562000000000'
+# 数据由度量cpu_load_short，标签键host和region和对应的标签值server01和us-west，
+# 字段值为0.64的字段键value和时间戳1434055562000000000组成
+
+# 将cpu_data.txt中数据写入mydb数据库
+curl -i -XPOST 'http://influxdb-ip:8086/write?db=test' --data-binary @cpu_data.txt
+# https://blog.csdn.net/liukuan73/article/details/79950329
+
+increase(com_codahale_metrics_servlet_InstrumentedFilter_requests_count{project="$project"}[1m])
+avg(com_codahale_metrics_servlet_InstrumentedFilter_requests{project="$project"} * 1000) by (quantile) 
+# 使用编辑可以操作,但这每个都是自己写的么
+
+curl  http://10.64.3.7/api/v1/model/namespaces/default/pod-list/busybox,busybox1/metrics/cpu/usage_rate
+{"items":[{"metrics":[{"timestamp":"2017-05-05T01:36:00Z","value":0},{"timestamp":"2017-05-05T01:37:00Z","value":0},{"timestamp":"2017-05-05T01:38:00Z","value":0},{"timestamp":"2017-05-05T01:39:00Z","value":0},{"timestamp":"2017-05-05T01:40:00Z","value":0},{"timestamp":"2017-05-05T01:41:00Z","value":0},{"timestamp":"2017-05-05T01:42:00Z","value":0},{"timestamp":"2017-05-05T01:43:00Z","value":0},{"timestamp":"2017-05-05T01:44:00Z","value":0},{"timestamp":"2017-05-05T01:45:00Z","value":0},{"timestamp":"2017-05-05T01:46:00Z","value":0},{"timestamp":"2017-05-05T01:47:00Z","value":0},{"timestamp":"2017-05-05T01:48:00Z","value":0},{"timestamp":"2017-05-05T01:49:00Z","value":0},{"timestamp":"2017-05-05T01:50:00Z","value":0}],"latestTimestamp":"2017-05-05T01:50:00Z"},{"metrics":[],"latestTimestamp":"0001-01-01T00:00:00Z"}]}
+
+
 
 
 # 部署 EFK 插件
@@ -1089,12 +1315,23 @@ http://10.64.3.7:8080/api/v1/proxy/namespaces/kube-system/services/kibana-loggin
 kubectl proxy --address='10.64.3.7' --port=8086 --accept-hosts='^*$'
 http://10.64.3.7:8086/api/v1/proxy/namespaces/kube-system/services/kibana-logging
 
-# 创建Index后，稍等几分钟就可以在 Discover 菜单下看到 ElasticSearch logging 中汇聚的日志?
-# 貌似有个图
+# 查看信息
+curl http://elasticsearch-logging:9200
+curl http://elasticsearch-logging:9200/?pretty
+curl -XGET http://elasticsearch-logging:9200/?pretty
 
-# 配置是配置完了,包还没下来,回头再看
+# 集群概要
+curl -XGET http://elasticsearch-logging:9200/_cluster/stats?pretty
+
+curl -XGET http://elasticsearch-logging:9200/_cluster/health?pretty
+curl -XGET http://elasticsearch-logging:9200/_cluster/settings?pretty
 
 
+
+# 暂时故障排除, node无法访问, 关闭后,可以看到 7号机的日志
+# 重启后故障消除,无法继续排查, 并未解决, 2个pod全都 7 了
+
+# 哪怕到了 k8s 年代,也是重启解百病啊...
 
 # 部署 Docker Registry
 
@@ -1310,3 +1547,19 @@ vi /etc/docker/daemon.json增加如下内容
 # 检查方法
 kubectl logs kibana-logging-2887055332-9m8hb -n kube-system -f  
 # 查看日志
+
+
+# Pod一直处于ContainerCreating状态
+    # 在Kubernetes环境网络可达的镜像私服上放一个pause-amd64的镜像，一般都是3.0版本
+    # 修改Kubernetes各节点的/etc/kubernetes/kubelet文件，追加
+    KUBELET_ARGS="--pod_infra_container_image=192.168.10.12:5000/google_containers/pause-amd64.3.0"
+    # 重启master节点的kube-apiserver kube-controller-manager kube-scheduler kube-proxy服务
+
+# 公网上的容器镜像放到镜像私服
+    # 外网docker环境中使用docker pull 命令拉取镜像到本地
+    # 使用docker save -o 命令将镜像保存为tar格式的文件
+    # 将tar文件拷贝至内网docker环境，然后使用docker load < XX.tar命令将镜像load到内网docker环境
+    # 将导入后的镜像，使用docker tag <私服地址>/:命令，为镜像打标签
+    # 使用docker push<私服地址>/:将镜像push到私服上
+
+# 需要补充命令实例
