@@ -1,0 +1,20 @@
+
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: my-k8s-traefik
+  namespace: kube-system
+spec:
+  rules:
+  - host: dashboard.k8s.ingress
+    http:
+      paths:
+      - backend:
+          serviceName: kubernetes-dashboard
+          servicePort: 80
+  - host: kibana.k8s.ingress
+    http:
+      paths:
+      - backend:
+          serviceName: kibana-logging
+          servicePort: 5601

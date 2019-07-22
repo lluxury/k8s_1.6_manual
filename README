@@ -12,6 +12,8 @@
     # kubedns、dashboard、heapster (influxdb、grafana)、EFK (elasticsearch、fluentd、kibana) 插件
     # 私有 docker registry，使用 ceph rgw 后端存储，TLS + HTTP Basic 认证
 
+    # 对k8s来说, 主机名也是很重要的!
+    # 没有定义好时间服务器, bin, 补全, 防火墙放行
 
 # 补全
  yum install -y bash-completion
@@ -42,6 +44,7 @@ CLUSTER_CIDR
 #   查看证书信息
 
 yum -y install ntp && ntpdate -u cn.pool.ntp.org
+systemctl enable ntpdate.service
 
     #   安装 CFSSL
     yum install wget -y
@@ -1563,3 +1566,7 @@ kubectl logs kibana-logging-2887055332-9m8hb -n kube-system -f
     # 使用docker push<私服地址>/:将镜像push到私服上
 
 # 需要补充命令实例
+
+
+
+

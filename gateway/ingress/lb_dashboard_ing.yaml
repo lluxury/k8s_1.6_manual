@@ -1,0 +1,13 @@
+kind: Ingress
+metadata:
+  name: test
+  namespace: kube-system
+spec:
+  rules:
+  - host: dashboard.io
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: dashboard
+          servicePort: 80

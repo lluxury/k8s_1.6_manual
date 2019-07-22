@@ -225,8 +225,6 @@ targetPort
 
 
 
-
-
 # 自建服务 test2
 -A KUBE-NODEPORTS -p tcp -m comment --comment "default/test2:s-tcp" -m tcp --dport 8582 -j KUBE-MARK-MASQ
 -A KUBE-NODEPORTS -p tcp -m comment --comment "default/test2:s-tcp" -m tcp --dport 8582 -j KUBE-SVC-ZW7I5FTP5PMPGBYR

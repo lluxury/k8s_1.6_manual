@@ -1,0 +1,214 @@
+    // 服务暴露
+    //   Ingress 介绍
+    //     服务暴露
+    //       LoadBlancer Service 平台
+    //       NodePort Service 端口
+    //       Ingress
+    //         Nginx Ingress
+    //     Nginx Ingress
+    //       Nginx 反向代理负载均衡器
+    //       Ingress Controller
+    //         控制器
+    //         k8s API交互
+    //         更新nginx均衡器
+    //       Ingress
+    //         定义规则
+    //   环境、软件准备
+gcr.io/google_containers/nginx-ingress-controller 0.9.0-beta.10 *
+gcr.io/google_containers/defaultbackend 1.0 *
+
+    //   部署 Default Backend
+cd /root
+git clone https://github.com/kubernetes/ingress-nginx.git
+git checkout nginx-0.9.0-beta.10
+ls -l ingress-nginx/examples/deployment/nginx/
+
+// 运行替换脚本
+
+kubectl create -f default-backend.yaml
+// ingress-nginx/examples/deployment/nginx/kubeadm/nginx-ingress-controller.yaml 
+// 原有配置,变化不大
+
+    //   部署 Ingress Controller
+// 使用 kubaadm 配置文件
+// kubectl create -f ingress-nginx/examples/deployment/nginx/kubeadm/nginx-ingress-controller.yaml
+
+// 使用其他的配置文件，需要先部署 default-backend
+
+  //修改controller文件增加rbac内容
+  vi controller.yaml
+  //   ServiceAccount
+  //     ingress
+  //   ClusterRole
+  //     1.6还是试用版 v1beta1
+  //     system:ingress
+  //     相关rules?
+  //   ClusterRoleBinding
+  //     system:ingress
+  //     ingress
+  //     节点角色和as绑定
+  //   Deployment
+  //     nginx-ingress-controller
+  //     放在一起保证次序
+
+kubectl create -f controller.yaml
+
+kubectl get pods --all-namespaces -o wide
+
+http://10.64.3.7:8080/api/v1/proxy/namespaces/kube-system/services/default-http-backend/
+
+
+// 部署测试服务
+vi test_service.yaml
+  // Deployment
+  //   echoheaders
+  //   - containerPort: 8080
+  // Service
+  //   echoheaders-default
+  //   NodePort
+  // Service
+  //   echoheaders-default
+  // Service
+  //   echoheaders-x
+  // Service
+  //   echoheaders-y
+
+// 部署一个容器开8080端口, 一堆服连8080,自己开80,还有一个对node暴露端口
+
+
+
+    //   部署 Ingress
+vi ingress.yaml
+  // Ingress
+  //   echomap
+  // spec_rules
+  //   foo.bar.com
+  //   /foo
+  //   echoheaders-x
+  //   80
+// 另一个相同
+kubectl describe ing
+
+curl -v http://10.64.3.7/foo -H 'host: foo.bar.com'
+curl -v http://10.64.3.7/foo -H 'host: bar.baz.com'
+curl -v http://10.64.3.7/bar -H 'host: bar.baz.com'
+
+kubectl get service --all-namespaces
+
+
+// 测试LoadBalancer 类型  service
+
+spec:
+  type: LoadBalancer
+  loadBalancerIP: 10.64.3.7
+  ports:
+  - port: 8001
+    targetPort: 9090
+  selector:
+    k8s-app: kubernetes-dashboard
+
+// 随机生成了NodePort：30617
+// 其他node节点ip加NodePort访问 也可以
+
+// service的loadbalancer网络类型通过ingress实现，实质上就是nodePort类型
+// 光ingress的yaml中配置hosts/path并不行,还要service中对应的pod中需要存在path的服务存在
+
+// svc/dashboard-1 一直 pending 回头再查
+// 需要的时候再调试
+
+// 暂时原则:
+    // 名字和app一样, 一个模块里的前部分都一样 echoheaders
+    // 部署 name,app,name
+    // 服务 metadata,name,x,app,port,targetPort,
+    // 解析 名字, 主机, path,服务的metadata-name,端口
+
+
+// 自己的测试,没有绑域名
+
+
+
+// https://blog.csdn.net/u013812710/article/details/72731406
+
+
+
+
+// 另一篇的生成
+default-http-backend-2198840601-53w56
+nginx-ingress-controller-627402744-xn4dm
+
+
+
+// 创建 Yaml 文件
+
+// default-http-backend
+// nginx-ingress-controller
+
+
+vi dashboard-kibana-ingress.yaml
+
+kubectl create -f dashboard-kibana-ingress.yaml
+kubectl get ingress --all-namespaces
+
+dashboard.k8s.ingress --|               |-> dashboard.k8s.ingress kubernetes-dashboard:80
+                        | 10.64.3.7     |
+kibana.k8s.ingress    --|               |-> kibana.k8s.ingress kibana-logging:5601
+// 本地访问，本机绑定 Host
+echo "10.64.3.7  dashboard.k8s.ingress" >> /etc/hosts
+echo "10.64.3.7  kibana.k8s.ingress" >> /etc/hosts
+
+curl -v http://10.64.3.7/ -H 'host: dashboard.k8s.ingress'
+
+
+// 浏览器访问
+// dashboard.k8s.ingress 
+// kibana.k8s.ingress
+// 这个应该绑本地吧
+
+
+// KIBANA_BASE_URL 问题
+http://kibana.k8s.ingress/app/kibana#/discover
+
+vi kubernetes/cluster/addons/fluentd-elasticsearch/kibana-controller.yaml
+
+env:
+  - name: "ELASTICSEARCH_URL"
+    value: "http://elasticsearch-logging:9200"
+  - name: "KIBANA_BASE_URL"
+    value: "/api/v1/proxy/namespaces/kube-system/services/kibana-logging"
+
+// value: "" 配置
+
+
+// Simple fanout
+  //     Name based virtual hosting
+// 基于域名访问虚拟主机的 Ingress 配置
+
+    //     Simple fanout
+vi my-k8s-ingress.yaml
+kubectl create -f my-k8s-ingress.yaml
+kubectl get ingress --all-namespaces
+
+echo "10.64.3.7  my-k8s-ingress" >> /etc/hosts
+
+http://my.k8s.ingress/dashboard/#!/workload?namespace=_all
+
+
+// 添加匹配规则
+// 将 http://my.k8s.ingress/kibana 转发到 kibana-logging 服务
+my.k8s.ingress -> 10.64.3.7  -> / dashboard    kubernetes-dashboard:80
+                                   / kibana       kibana-logging:5601
+
+
+
+kubectl edit ingress my.k8s.ingress
+vi my-k8s-ingress.yaml
+
+kubectl apply -f my-k8s-ingress.yaml 
+kubectl replace -f my-k8s-ingress.yaml 
+
+// /bundles/commons.bundle.js?v=10146
+// 请求地址少了一层 /kibana 
+
+kubectl apply -f kubernetes/cluster/addons/fluentd-elasticsearch/kibana-controller.yaml
+
+http://my.k8s.ingress/kibana/app/kibana#/discover?
