@@ -1,0 +1,278 @@
+
+https://kubernetes.io/docs/concepts/policy/pod-security-policy/
+
+
+# 错误的容器镜像/非法的仓库权限
+kubectl run fail --image=rosskukulinski/dne:v1.0.0
+kubectl get pods
+# ErrImagePull 或者 ImagePullBackOff 
+kubectl describe pod fail-2734878645-32ftj
+# Events: 下面部分
+
+# 解决
+docker pull rosskukulinski/dne:v1.0.0
+https://kubernetes.io/docs/user-guide/images/#specifying-imagepullsecrets-on-a-pod
+docker pull rosskukulinski/dne
+# 换用 quay.io/rosskukulinski/dne:v1.0.0
+
+
+
+
+# 应用启动之后又挂掉
+kubectl run crasher --image=rosskukulinski/crashing-app
+kubectl get pods
+# NAME                       READY     STATUS             RESTARTS   AGE
+# crasher-2443551393-vuehs   0/1       CrashLoopBackOff   2          54s
+
+kubectl describe pod crasher-2443551393-vuehs
+# 应用的 Exit Code 是 1 ,还看到一个 OOMKilled 错误
+
+kubectl logs crasher-2443551393-vuehs
+kubectl logs crasher-2443551393-vuehs --previous  
+# 查阅前一个的日志,没有的话,设置日志输出
+
+
+
+
+# 缺失 ConfigMap 或者 Secret
+# 构造pod ...
+  command: [ "/bin/sh", "-c", "env" ]
+  env:
+    - name: SPECIAL_LEVEL_KEY
+      valueFrom:
+        configMapKeyRef:
+          name: special-config
+          key: special.how
+
+kubectl create -f configmap-pod.yaml
+kubectl get pods
+# NAME            READY     STATUS              RESTARTS   AGE
+# configmap-pod   0/1       RunContainerError   0          3s
+
+kubectl describe pod configmap-pod
+# 访问名为 special-config 的 ConfigMap, 结果没找到
+
+
+# 缺失 Secrets
+kubectl create -f missing-secret.yaml
+kubectl get pods
+# NAME            READY     STATUS              RESTARTS   AGE
+# secret-pod   0/1       ContainerCreating   0          4h
+
+kubectl describe pod secret-pod
+ # 无法从名为 myothersecret 的 Secret 挂卷
+
+
+
+
+
+
+# 活跃度/就绪状态探测失败
+# 容器应用是 running 状态，不代表它在工作
+
+# Kubernetes 提供了两个基本特性，称作活跃度探测和就绪状态探测。本质上来说，活跃度/就绪状态探测将定期地执行一个操作
+# 发送一个 HTTP 请求，打开一个 tcp 连接，或者在你的容器内运行一个命令, 以确认容器在工作
+
+# 如果活跃度探测失败，Kubernetes 将杀掉你的容器并重新创建一个。
+# 如果就绪状态探测失败，这个 Pod 将不会作为一个服务的后端 endpoint，也就是说不会流量导到这个 Pod，直到它变成 Ready
+
+kubectl create -f liveness.yaml
+kubectl get pods
+
+# NAME           READY     STATUS    RESTARTS   AGE
+# liveness-pod   0/1       Running   4          2m
+
+kubectl describe pod liveness-pod
+ # container "test-container" is unhealthy, it will be killed and re-created
+# 你的探测不正确，健康检查的 URL 是否改变了？
+# 你的探测太敏感了， 你的应用是否要过一会才能启动或者响应？
+# 你的应用永远不会对探测做出正确响应，你的数据库是否配置错了
+
+
+
+
+# 超出CPU/内存的限制
+# Kubernetes 赋予集群管理员限制 Pod 和容器的 CPU 或内存数量
+
+kubectl create -f gateway.yaml
+kubectl get pods
+# No resources found.
+
+kubectl describe deployment/gateway
+kubectl describe rs/gateway-764140025
+
+kubectl describe limitrange
+
+# 这个没有试验出来,因为我没有做限制, 如何做限制
+
+
+# 新建namespace,限制资源
+    # 在Pod Container Spec中设定
+    # 在Namespace中限定
+
+kubectl describe namespace default 
+kubectl  config view couchbase
+get namespace
+kubectl get namespace 
+kubectl describe namespaces default
+kubectl run couchbase --image=arungupta/couchbase
+kubectl get rc --all-namespaces 
+kubectl get rs
+kubectl config view couchbase
+touch myns.yaml
+
+vi myns.yaml
+kubectl create -f myns.yaml 
+kubectl get namespace 
+kubectl --namespace=development run couchbase --image=arungupta/couchbase
+kubectl get rs --all-namespaces 
+kubectl config set-context dev --namespace=development --cluster=couchbase-on-kubernetes_kubernetes  --user=couchbase-on-kubernetes_kubernetes
+kubectl config view couchbase
+kubectl config use-context dev
+kubectl get rc
+kubectl get rs
+kubectl config use-context kubernetes
+kubectl get rs
+kubectl config view kubernetes
+kubectl --namespace=default delete rs couchbase-3179999270 
+kubectl --namespace=development delete rs couchbase-3179999270 
+kubectl get rs --all-namespaces 
+
+vi quota.yaml
+kubectl --namespace=development create -f quota.yaml 
+kubectl --namespace=development describe quota 
+kubectl --namespace=development run couchbase --image=arungupta/couchbase
+kubectl delete deployment couchbase 
+kubectl delete --namespace=development deployment couchbase 
+kubectl --namespace=development run couchbase --image=arungupta/couchbase
+kubectl --namespace=development describe quota 
+kubectl --namespace=development describe rs
+
+vi limits.yaml 
+kubectl --namespace=development create -f limits.yaml 
+kubectl --namespace=development describe rs
+kubectl --namespace=development describe quota 
+kubectl --namespace=development run couchbase --image=arungupta/couchbase
+kubectl --namespace=development delete deployment couchbase
+kubectl --namespace=development run couchbase --image=arungupta/couchbase
+kubectl --namespace=development describe quota 
+
+vi couchbase-pod.yaml
+kubectl create -f couchbase-pod.yaml  # 注意权限 admin 不会被限制
+kubectl --namespace=development create -f couchbase-pod.yaml 
+
+
+
+kubectl --namespace=development describe limitrange
+# Error from server (Forbidden): error when creating "couchbase-pod.yaml": pods "couchbase-pod" is forbidden: exceeded quota: quota, requested: memory=2G, used: memory=256Mi, limited: memory=1Gi
+
+
+
+
+
+
+# 资源配额故障
+# 给namespace 设置资源配额
+
+# 扩展副本失败
+kubectl create -f test-quota.yaml 
+kubectl scale deploy/gateway-quota --replicas=3
+
+kubectl describe deploy/gateway-quota
+# exceeded quota: compute-resources, requested: pods=1, used: pods=1, limited: pods=1。
+# 配置限制为 1
+
+# 解决
+# 要求集群管理员提升该 namespace 的配额
+# 删除或者收缩该 namespace 下其它的 deployment
+# 直接编辑配额
+
+
+
+
+
+# 集群资源不足
+kubectl describe ns default
+
+      resources:
+        requests:
+          cpu: 1
+
+kubectl create -f cpu-scale.yaml
+kubectl scale deploy/cpu-scale --replicas=2
+kubectl describe pod cpu-scale-908056305-phb4j
+
+# No nodes are available that match all of the following predicates:: Insufficient cpu (2).
+# 部署集群自动伸缩能力?
+
+
+
+
+
+
+# 持久化卷挂载失败
+# 另一个常见错误是创建了一个引用不存在的持久化卷的 deployment
+PersistentVolumes
+# PersistentVolumeClaims或直接访问持久化磁盘
+volume-test.yaml
+kubectl create -f volume-test.yaml
+
+kubectl get pods
+# NAME                           READY     STATUS              RESTARTS   AGE
+# volume-test-3922807804-33nux   0/1       ContainerCreating   0          3m
+
+kubectl describe pod volume-test-1018877270-4x347
+# Output: mount: special device /var/lib/kubelet/plugins/kubernetes.io/gce-pd/mounts/my-data-disk does not exist
+
+
+
+
+
+
+# 校验错误
+pip install PyYAML
+python -c 'import yaml,sys;yaml.safe_load(sys.stdin)' < test-application.deploy.yaml 
+# 效果一般, 只能检查格式错误, 但不能保证有效
+
+kubectl create -f test-application.deploy.yaml --dry-run --validate=true
+# 需要有工作集群, 好用但现在自动使用
+
+
+
+
+
+
+
+# 容器镜像没有更新
+# 使用一个镜像 tag（比如：rosskulinski/myapplication:v1） 创建一个 deployment
+# 注意到 myapplication 镜像中存在一个 bug
+# 构建了一个新的镜像，并推送到了相同的 tag（rosskukulinski/myapplication:v1）
+# 删除了所有 myapplication 的 pods，新的实例被 deployment 创建出了
+# 发现 bug 仍然存在
+# 重复 3-5 步直到你抓狂为止
+
+# https://kubernetes.io/docs/api-reference/v1/definitions/#_v1_container
+ImagePullPolicy
+
+# 镜像 tag 标记为 :v1，默认的镜像拉取策略是 IfNotPresent
+# 本地已经有一份 rosskukulinski/myapplication:v1 的拷贝, 不会 docker pull
+
+# 解决
+# 切成 :latest tag（千万不要这么做！）
+# deployment 中指定 ImagePullPolicy: Always
+# 使用唯一的 tag（比如基于你的代码版本控制器的 commit id）
+
+# 开发阶段及快速验证原型，指定 ImagePullPolicy: Always 
+# 产品部署阶段，使用基于 Git SHA-1 的唯一 tag
+
+
+
+# 总结
+kubectl describe deployment/xx
+kubectl describe replicaset/xx
+kubectl get pods
+kubectl describe pod/xx
+kubectl logs xx --previous
+
+# 排查脚本
+# 还是挺好用的, 注意下名字空间

@@ -1,0 +1,40 @@
+
+# 部署
+#   prometheus
+#     node-exporter
+#       每个node上跑一个
+#       采集机器资源
+node-exporter-deployment.yaml
+
+
+#     配置prometheus预备
+#       k8s集群最基本的Metrics
+#       apiserver的metrics
+#       kubelet的metrics
+#         node上容器的调度
+#       kubelet里的cadvisor
+#         node上的容器内部信息
+#       node-exporter
+#         node的宿主机资源
+#       访问apiserver的权限
+#       目标地址 targets
+#       抓取规则 scrape
+#     搭建prometheus
+#       单点prometheus
+#       hostpath持久化数据
+#     Prometheus告警
+#       Prometheus只负责告警计算
+#       实施由alertmanager处理
+#   alertmanager
+#     配置configmap
+#       Route
+#       Group_wait
+#       Group_interval
+#       Repeat_interval
+#       校验服务端证书
+#     service服务
+#     启动alertmanager
+#   grafana
+#     在prometheus UI里调试好表达式
+#     grafana里配置一下图表
+#     生产环境应该用mysql来存dashboard配置

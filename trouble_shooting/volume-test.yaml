@@ -1,0 +1,23 @@
+# volume-test.yaml
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: volume-test
+spec:
+  template:
+    metadata:
+      labels:
+        app: volume-test
+    spec:
+      containers:
+      - name: test-container
+        image: nginx
+        volumeMounts:
+        - mountPath: /test
+          name: test-volume
+      volumes:
+      - name: test-volume
+        # This GCE PD must already exist (oops!)
+        gcePersistentDisk:
+          pdName: my-data-disk
+          fsType: ext4

@@ -1,0 +1,25 @@
+prometheus-operator grafana/grafana 5.1.1   *
+prometheus-operator prom/prometheus v2.2.1  *
+prometheus-operator quay.io/prometheus/prometheus   v2.2.1  *
+prometheus-operator quay.io/prometheus/node-exporter    v0.16.0-rc.3    *
+prometheus-operator quay.io/prometheus/alertmanager v0.15.0-rc.1    *
+prometheus-operator quay.io/coreos/prometheus-operator  v0.19.0 *
+prometheus-operator quay.io/coreos/prometheus-config-reloader   v0.0.4  *
+prometheus-operator quay.io/coreos/grafana-watcher  v0.0.8  *
+prometheus-operator quay.io/coreos/configmap-reload v0.0.1  *
+prometheus-operator k8s.gcr.io/kube-state-metrics   v1.3.1  *
+prometheus-operator k8s.gcr.io/addon-resizer    1.7 *
+kubernetes  k8s.gcr.io/pause-amd64  3.1 *
+kubernetes  k8s.gcr.io/kube-proxy-amd64 v1.10.0 *
+kubernetes  k8s.gcr.io/kube-controller-manager-amd64    v1.10.0 *
+kubernetes  k8s.gcr.io/kube-scheduler-amd64 v1.10.0 *
+kubernetes  k8s.gcr.io/kube-apiserver-amd64 v1.10.0 *
+kubernetes  k8s.gcr.io/etcd-amd64   3.1.12  *
+kubernetes  k8s.gcr.io/kube-addon-manager   v8.6    *
+kubernetes  k8s.gcr.io/k8s-dns-dnsmasq-nanny-amd64  1.14.8  *
+kubernetes  k8s.gcr.io/k8s-dns-sidecar-amd64    1.14.8  *
+kubernetes  k8s.gcr.io/k8s-dns-kube-dns-amd64   1.14.8  *
+kubernetes  k8s.gcr.io/kubernetes-dashboard-amd64   v1.8.1  
+kubernetes  k8s.gcr.io/defaultbackend   1.4 
+kubernetes  quay.io/kubernetes-ingress-controller/nginx-ingress-controller  0.16.2  
+kubernetes  gcr.io/kubernetes-helm/tiller   v2.8.0  
