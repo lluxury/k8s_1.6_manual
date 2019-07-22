@@ -1,0 +1,91 @@
+    // Traefik
+
+    //   Traefik 介绍
+    //     负载均衡工具
+    //     支持多种后台
+    //       Docker
+    //       Swarm
+    //       Kubernetes
+    //       Mesos
+    //       Consul
+    //       Etcd
+    //     动态刷新配置
+
+    //   环境、软件准备
+// 需要k8s集群
+
+    //   部署 Traefik
+
+git clone https://github.com/containous/traefik.git
+git checkout v1.4.2
+cd  traefik/examples/k8s/
+
+// 1.42
+//   rbac
+//     定义
+//       ClusterRole 
+//     绑定
+//       ClusterRole
+//       ServiceAccount
+//   Deployment
+//     定义
+//       ServiceAccount
+//     Deployment
+//       traefik-ingress-controller
+//     Service
+//       traefik-ingress-service
+
+// ClusterRole 要重新定义,要注意下, 然后和sa绑定,这个同其他类似
+
+
+kubectl create -f  traefik-rbac.yaml
+
+kubectl create -f  traefik-deployment.yaml
+kubectl get pods --all-namespaces -o wide |grep traefik
+
+kubectl get service --all-namespaces
+// kube-system   traefik-ingress-service   10.96.8.191      <nodes>       80:30016/TCP,8080:30960/TCP
+// http://10.222.76.93:30960/dashboard/#/
+http://10.64.3.7:8726/dashboard/#/
+
+    //   部署 Traefik UI
+kubectl create -f ui.yaml
+kubectl get service --all-namespaces
+
+    //   部署自定义 Ingress
+    //     自定义  Ingress 实现服务暴漏
+// 定义规则
+vi dashboard-ela-k8s-traefik.yaml
+
+// kind: Ingress
+// 主机名, 路径, 服务名, 端口
+
+
+kubectl create -f dashboard-ela-k8s-traefik.yaml
+kubectl get ingress --all-namespaces
+
+    //     域名下不同的路径转发
+    //     traefik.frontend.rule.type:PathPrefixStrip
+vi my-k8s-traefik.yaml
+
+
+kubectl create -f my-k8s-traefik.yaml
+kubectl get ingress --all-namespaces
+
+    //     scale 自动更新
+kubectl -n kube-system scale deployment kubernetes-dashboard --replicas=3
+// 查看
+
+    //   部分特性说明
+    //     自动熔断
+NetworkErrorRatio() > 0.5：监测服务错误率达到50%时，熔断
+LatencyAtQuantileMS(50.0) > 50：监测延时大于50ms时，熔断
+ResponseCodeRatio(500, 600, 0, 600) > 0.5：监测返回状态码为[500-600]在[0-600]区间占比超过50%时，熔断
+// 待测试
+
+    //     负载均衡策略
+// Traefik 提供两种负载均衡策略支持
+//   wrr 加权轮训调度算法
+//   drr 动态加权循环调度算法
+
+http://10.64.3.7:8706/dashboard/#/

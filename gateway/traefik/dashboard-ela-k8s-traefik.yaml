@@ -1,0 +1,24 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: dashboard-ela-k8s-traefik
+  namespace: kube-system
+  annotations:
+    kubernetes.io/ingress.class: traefik
+spec:
+  rules:
+  - host: dashboard.k8s.traefik
+    http:
+      paths:
+      - path: /  
+        backend:
+          serviceName: kubernetes-dashboard
+          servicePort: 80
+  - host: ela.k8s.traefik
+    http:
+      paths:
+      - path: /  
+        backend:
+          serviceName: elasticsearch-logging
+          servicePort: 9200
+

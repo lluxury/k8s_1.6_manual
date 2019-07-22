@@ -1,0 +1,22 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: my-k8s-traefik
+  namespace: kube-system
+  annotations:
+    kubernetes.io/ingress.class: traefik
+    traefik.frontend.rule.type: PathPrefixStrip
+    # 根据路径来转发
+spec:
+  rules:
+  - host: my.k8s.traefik
+    http:
+      paths:
+      - path: /dashboard
+        backend:
+          serviceName: kubernetes-dashboard
+          servicePort: 80
+      - path: /kibana
+        backend:
+          serviceName: kibana-logging
+          servicePort: 5601

@@ -1,0 +1,21 @@
+
+// systemctl stop NetworkManager
+// ifup ens33
+
+export PATH=/root/local/bin:$PATH
+source <(kubectl completion bash)
+iptables -P FORWARD ACCEPT
+
+
+sudo systemctl start etcd
+sudo systemctl start flanneld
+systemctl start kube-apiserver
+systemctl start kube-controller-manager
+sudo systemctl start kube-scheduler
+    sudo systemctl start docker
+    sudo systemctl start kube-proxy
+    sudo systemctl start kubelet
+export PATH=/root/local/bin:$PATH
+iptables -P FORWARD ACCEPT
+
+ntpdate -u cn.pool.ntp.org
