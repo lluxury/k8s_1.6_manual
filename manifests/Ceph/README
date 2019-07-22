@@ -1,0 +1,922 @@
+
+        // Ceph介绍
+// 开源的分布式存储系统,对象存储、块设备、文件系统
+
+        // 环境准备
+// Centos：release 7.4.1708 (Core)
+// Ceph：jewel-10.2.10
+// Openssh-server：version 7.4
+// NTP
+
+    // 组件
+    Ceph Monitor
+    Ceph OSD
+    Ceph MDS    //非必须 文件存储
+
+        // 规划
+    admin-node  10.66.3.86   ceph-deploy mon
+    node0   10.64.3.7   osd.0
+    node1   10.64.3.8   osd.1
+
+
+        // 预检
+    // 配置节点Host x 3 
+// 主机名必须要
+
+hostnamectl set-hostname admin
+
+hostnamectl set-hostname node0
+
+hostnamectl set-hostname node1
+
+cat /etc/hostname 
+// admin 待更新
+
+    cat /etc/hosts
+
+    10.66.3.86 admin
+    10.64.3.7 node0
+    10.64.3.8 node1
+
+
+    // 部署工具 ceph-deploy
+// admin-node
+sudo yum install -y yum-utils && sudo yum-config-manager --add-repo https://dl.fedoraproject.org/pub/epel/7/x86_64/ && sudo yum install --nogpgcheck -y epel-release && sudo rpm --import /etc/pki/rpm-gpg/RPM-GPG-KEY-EPEL-7 && sudo rm /etc/yum.repos.d/dl.fedoraproject.org*
+
+yum --disablerepo="*" --enablerepo="Ceph-noarch" list available
+yum --disablerepo="*" --enablerepo="Ceph-noarch" update
+yum --disablerepo="*" --enablerepo="epel" install ceph
+
+// ceph源 x3
+    sudo vi /etc/yum.repos.d/ceph.repo
+[Ceph-noarch]
+name=Ceph noarch packages
+baseurl=http://download.ceph.com/rpm-jewel/el7/noarch
+enabled=1
+gpgcheck=1
+type=rpm-md
+gpgkey=https://download.ceph.com/keys/release.asc
+priority=1
+
+[ceph]
+name=ceph
+baseurl=https://buildlogs.centos.org/centos/7/storage/x86_64/ceph-jewel/
+gpgcheck=0
+enabled=1
+
+yum install deltarpm -y
+
+sudo mv /etc/yum.repos.d/ceph.repo /etc/yum.repos.d/ceph-deploy.repo
+sudo yum update && sudo yum install ceph -y
+
+
+    // NTP 和 Openssh x3 已有
+sudo yum install ntp ntpdate ntp-doc
+ntpdate 0.cn.pool.ntp.org
+
+sudo yum install openssh-server
+ssh -V
+
+    // 部署用户 x3
+// 特定用户
+sudo useradd -d /home/cephd -m cephd
+sudo passwd cephd
+
+// 添加 sudo 权限
+echo "cephd ALL = (root) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/cephd
+sudo chmod 0440 /etc/sudoers.d/cephd
+
+// admin-node
+su - cephd 
+
+    ssh-keygen
+    ssh-copy-id cephd@node0
+    ssh-copy-id cephd@node1
+    ssh node0
+    ssh node1
+
+// cephd
+vi ~/.ssh/config
+    Host node0
+       Hostname node0
+       User cephd
+    Host node1
+       Hostname node1
+       User cephd
+
+sudo chmod 600 ~/.ssh/config
+
+
+    // 网络配置 x3
+sudo cat /etc/sysconfig/network-scripts/ifcfg-ens33|grep ONBOOT
+// ONBOOT="yes"  # 这里要设置为 yes
+
+sudo cat /etc/selinux/config |grep ^SELINUX=
+
+sudo firewall-cmd --zone=public --add-port=6789/tcp --permanent
+firewall-cmd --reload
+
+iptables -I INPUT -p tcp --dport 6789 -j ACCEPT
+service iptables save
+
+
+
+        // 集群搭建
+    // admin-node
+        // 清理配置
+    ceph-deploy purgedata admin node0 node1
+    ceph-deploy forgetkeys
+
+        // 清理安装包
+    ceph-deploy purge admin node0 node1
+
+    // 创建目录
+// admin-node
+mkdir ~/ceph-cluster && cd ~/ceph-cluster
+
+    // 创建集群
+ceph-deploy new admin
+
+    // ceph-cluster 
+// ceph.conf 为 ceph 配置
+// ceph-deploy-ceph.log 为 ceph-deploy 日志
+// ceph.mon.keyring 为 ceph monitor 的密钥环
+
+vi ceph.conf 
+  osd pool default size = 2
+
+// 各个节点安装 ceph
+ceph-deploy install admin node0 node1
+
+// 初始化 monitor 节点及收集所有密钥
+ceph-deploy mon create-initial
+ceph-deploy --overwrite-conf mon create-initial
+
+ll ~/ceph-cluster
+tail -n20 ceph-deploy-ceph.log
+
+// 创建 OSD 
+// admin-node
+ssh node0
+sudo mkdir /var/local/osd0
+sudo chown -R ceph:ceph /var/local/osd0
+exit
+
+ssh node1
+sudo mkdir /var/local/osd1
+sudo chown -R ceph:ceph /var/local/osd1
+exit
+
+
+
+ // ceph-deploy 节点执行 prepare OSD 操作
+// 在各个 OSD 节点上创建激活 OSD 需要的信息
+ceph-deploy --overwrite-conf osd prepare  node0:/var/local/osd0  node1:/var/local/osd1
+
+// 激活 activate OSD
+ceph-deploy osd activate  node0:/var/local/osd0  node1:/var/local/osd1
+// 查看日志
+
+// 同步配置文件和 admin 密钥
+ceph-deploy admin admin node0 node1
+sudo chmod +r /etc/ceph/ceph.client.admin.keyring
+
+    // 集群状态
+ceph -s
+// health HEALTH_OK
+
+    // 集群健康
+ceph health
+
+    // 集群 OSD 
+ceph osd tree
+
+// 安装成功
+
+// 默认开启 cephx 安全认证的
+// 使用 Ceph RBD 要配置认证信息
+
+
+
+
+
+
+
+// 初试 Ceph 存储之块设备、文件系统、对象存储
+    // Ceph 存储介绍
+    // 环境、软件准备
+    // Ceph 块设备
+// Ceph 块设备　简称 RBD
+// 不能在与 Ceph 存储集群相同的物理节点上执行使用 RBD
+
+// cephd
+// 新节点
+ceph-deploy install node2
+
+cd ~/ceph-cluster
+ceph-deploy admin node2
+// 同步密钥
+
+// node2 节点上执行
+sudo chmod +r /etc/ceph/ceph.client.admin.keyring
+
+
+    // 配置 RBD
+    // 创建一个块设备镜像 image
+rbd create foo --size 1024
+rbd list
+
+
+// admin
+    // 把 foo image 映射到内核，并格式化为块设备
+sudo rbd map foo --name client.admin
+
+// could not insert 'rbd':: Cannot allocate memory
+// 没内存,没权限等
+
+// rbd: sysfs write failed
+// RBD image feature set mismatch
+ // feature 不匹配啊
+
+rbd info foo
+    // features: layering, exclusive-lock, object-map, fast-diff, deep-flatten
+
+uname -r
+// 3.10.0-514.el7.x86_64 只支持 layering
+
+rbd feature disable foo exclusive-lock, object-map, fast-diff, deep-flatten
+rbd image foo
+// 临时, 新部署会有问题
+
+vi /etc/ceph/ceph.conf
+rbd_default_features = 1
+// 永久, 各节点都要改
+
+
+rbd feature disable foo exclusive-lock, object-map, fast-diff, deep-flatten
+sudo rbd map foo --name client.admin
+sudo mkfs.ext4 -m0 /dev/rbd/rbd/foo 
+ls -al /dev/rbd/rbd/foo
+// 配置 RBD
+
+sudo mkdir /mnt/rbd
+sudo mount /dev/rbd/rbd/foo /mnt/rbd
+df -h
+
+cd /mnt/rbd
+sudo dd if=/dev/zero of=testrbd bs=5M count=1
+df -h
+// 测试
+
+ssh node0
+/etc/security/limits.d/20-nproc.conf
+df -h
+// 磁盘空间减少 这个测试不出来,我给的很少
+
+
+    // Ceph 文件系统
+ // Ceph 文件系统 简称cephfs
+// 在新的节点上使用 cephfs 的话，需要通过 ceph-deploy 安装 ceph 到该节点上
+// Ceph 文件系统需要至少两个 RADOS 存储池，一个用于数据、一个用于元数据
+
+// admin
+ceph osd pool create cephfs_data 64
+ceph osd pool create cephfs_metadata 64
+// 创建两个存储池
+
+ceph fs new cephfs cephfs_metadata cephfs_data
+ceph fs ls
+// 创建cephfs 文件系统
+
+ceph mds stat
+
+    // 内核驱动挂载
+// 要先部署部署元数据服务器 MDS ,不然挂载会失败
+// mount error 5 = Input/output error
+cd ceph-cluster/
+ceph-deploy mds create admin node0 node1
+
+ceph mds stat
+
+// Ceph v0.55 及后续版本默认开启了 cephx 认证，所以在挂载时，需要指明其密钥，以便通过认证
+cat /etc/ceph/ceph.client.admin.keyring
+sudo mkdir /mnt/cephfs
+sudo mount -t ceph 10.66.3.86:6789:/ /mnt/cephfs -o name=admin,secret=AQB3UixdLZqwCxAAnQfKrxA92KuYGPxopjvynw==
+
+// 文件方式
+vi /etc/ceph/admin.secret
+AQB3UixdLZqwCxAAnQfKrxA92KuYGPxopjvynw==
+
+sudo mount -t ceph 10.66.3.86:6789:/ /mnt/cephfs -o name=admin,secretfile=/etc/ceph/admin.secret
+
+df -h
+// 10.66.3.86:6789:/    100G   30G   71G  30% /mnt/cephfs
+// node0 和 node1 容量合并
+
+// 文件测试
+cd /mnt/cephfs
+sudo dd if=/dev/zero of=testrbd bs=5M count=1
+df -h
+// 同样看硬盘空间减少
+
+sudo umount /mnt/cephfs
+
+// 用户空间文件系统（FUSE）
+yum install -y ceph-fuse
+sudo mkdir ~/cephfs
+sudo ceph-fuse -m 10.66.3.86:6789 ~/cephfs
+
+sudo ceph-fuse -k <key_path>/ceph.client.admin.keyring -m 10.66.3.86:6789 ~/cephfs
+// 密钥文件不在 /etc/ceph 目录，指定密钥文件
+
+
+    // Ceph 对象存储
+// Ceph 对象存储可以简称为 RGW
+// 基于 librados，为应用提供 RESTful 类型的对象存储接口，其接口方式支持 S3 Swift
+
+S3: Amazon S3 RESTful API
+Swift: OpenStack Swift API
+
+    // 安装 Ceph 对象网关
+// 使用内嵌 Civetweb 作为 Web Server,默认端口为 7480
+
+// admin
+cd ~/ceph-cluster
+ceph-deploy install --rgw admin
+
+    // 新建 Ceph 对象网关实例
+
+iptables -I INPUT -p tcp --dport 7480 -j ACCEPT
+http://admin:7480 访问
+
+
+cd ~/ceph-cluster
+ceph-deploy --overwrite-conf rgw create admin
+
+// 修改端口
+sudo vi /etc/ceph/ceph.conf
+    [client.rgw.admin]
+    rgw_frontends = "civetweb port=80"
+
+// 重启 Ceph 对象网关
+sudo systemctl restart ceph-radosgw.service
+
+    // 使用 Ceph 对象网关
+// 创建一个 RADOSGW 用户并且赋予访问权限，才可以正常访问 RGW
+
+
+    // 创建 S3 网关用户
+sudo radosgw-admin user create --uid="rgwuser" --display-name="This is first rgw test user"
+
+// 返回值  access_key 和 secret_key 要记录下来
+    {
+        "user_id": "rgwuser",
+        "display_name": "This is first rgw test user",
+        "email": "",
+        "suspended": 0,
+        "max_buckets": 1000,
+        "auid": 0,
+        "subusers": [],
+        "keys": [
+            {
+                "user": "rgwuser",
+                "access_key": "32XTAG36CWVOJO1C6RF2",
+                "secret_key": "ebqJpzyDsfo7BbCxO8NKtoW83qt19iNLMjrBoJeq"
+            }
+        ],
+        "swift_keys": [],
+        "caps": [],
+        "op_mask": "read, write, delete",
+        "default_placement": "",
+        "placement_tags": [],
+        "bucket_quota": {
+            "enabled": false,
+            "max_size_kb": -1,
+            "max_objects": -1
+        },
+        "user_quota": {
+            "enabled": false,
+            "max_size_kb": -1,
+            "max_objects": -1
+        },
+        "temp_url_keys": []
+    }
+
+
+
+
+    // 测试访问 S3 接口
+// 编写 python 脚本
+
+sudo yum install python-boto
+vi s3.py
+
+python s3.py 
+// my-first-s3-bucket  2019-07-16T07:33:47.225Z
+
+    // 创建 Swift 用户
+sudo radosgw-admin subuser create --uid=rgwuser --subuser=rgwuser:swift --access=full
+
+{
+    "user_id": "rgwuser",
+    "display_name": "This is first rgw test user",
+    "email": "",
+    "suspended": 0,
+    "max_buckets": 1000,
+    "auid": 0,
+    "subusers": [
+        {
+            "id": "rgwuser:swift",
+            "permissions": "full-control"
+        }
+    ],
+    "keys": [
+        {
+            "user": "rgwuser",
+            "access_key": "32XTAG36CWVOJO1C6RF2",
+            "secret_key": "ebqJpzyDsfo7BbCxO8NKtoW83qt19iNLMjrBoJeq"
+        }
+    ],
+    "swift_keys": [
+        {
+            "user": "rgwuser:swift",
+            "secret_key": "mIRanBq5WjhYMLnlqYkDLck8lL2Pc0aJA45V6VpD"
+        }
+    ],
+    "caps": [],
+    "op_mask": "read, write, delete",
+    "default_placement": "",
+    "placement_tags": [],
+    "bucket_quota": {
+        "enabled": false,
+        "max_size_kb": -1,
+        "max_objects": -1
+    },
+    "user_quota": {
+        "enabled": false,
+        "max_size_kb": -1,
+        "max_objects": -1
+    },
+    "temp_url_keys": []
+}
+
+    // 测试访问 Swift 接口
+// 安装 Swift 命令行客户端
+sudo apt-get install python-setuptools
+sudo easy_install pip
+sudo pip install --upgrade setuptools
+sudo pip install --upgrade python-swiftclient
+
+// 访问 Swift 接口
+swift -A http://10.66.3.86:7480/auth/1.0 -U rgwuser:swift -K 'mIRanBq5WjhYMLnlqYkDLck8lL2Pc0aJA45V6VpD' list
+// my-first-s3-bucket
+
+
+
+
+
+
+
+
+// Kubernetes 集群使用 Ceph RBD 块存储
+    // Kubernetes PersistentVolumes 介绍
+    // 环境、软件准备
+Centos：release 7.4.1708 (Core)
+Ceph：jewel-10.2.10
+Kubernetes：v1.6.2
+Docker：v1.12.6
+
+
+    // 使用 Ceph RBD 块存储
+    //   使用 Ceph RBD 要配置认证信息
+    // 单节点使用 Ceph RBD
+// 先只使用 admin 和 node0
+
+    // Kubernetes PV & PVC 方式使用 Ceph RBD
+    // 测试单节点以及多节点使用 Ceph RBD
+
+git clone https://github.com/kubernetes/examples.git
+ls examples/staging/volumes/rbd
+
+// rbd-with-secret.yaml、rbd.yaml 和 ceph-secret.yaml 
+
+
+
+    //     使用 rbd.yaml
+
+// monitors：这是 Ceph 集群的 monitor 监视器，Ceph 集群可以配置多个 monitor，如有多多个配置所有
+
+// pool：这是 Ceph 集群中存储数据进行归类区分使用，可使用 ceph osd pool ls 命令列出所有，
+    // 默认创建的 pool 为 rbd，所以这里可以修改为 rbd，也可以创建一个新的名称为 kube 的 pool
+
+// image：这是 Ceph 块设备中的磁盘映像文件，可使用 rbd create ... 命令创建指定大小的映像，之前创建 foo
+
+// fsType：文件系统类型，默认使用 ext4 即可
+// readOnly：是否为只读，这里测试使用只读即可
+// user：这是 Ceph Client 访问 Ceph 存储集群所使用的用户名，这里我们使用 admin 即可
+
+// keyring：这是 Ceph 集群认证需要的密钥环，搭建 Ceph 存储集群时生成的 ceph.client.admin.keyring 
+// imageformat：这是磁盘映像文件格式，可以使用 2，或者老一些的 1
+// imagefeatures： 这是磁盘映像文件的特征，需要 uname -r 查看集群系统内核所支持的特性，
+    // 这里我们安装的 Ceontos7 内核版本为 3.10.0-693.5.2.el7.x86_64 只支持 layering
+
+
+// yaml使用前
+// 先创建 Image foo，否则创建 Pod 会报错
+rbd create foo --size 10
+rbd list
+rbd feature disable foo exclusive-lock, object-map, fast-diff, deep-flatten
+rbd info foo
+sudo rbd map foo
+rbd showmapped
+sudo mkfs.ext4 -m0 /dev/rbd0
+
+// 去 k8s 节点上生成 keyring 密钥文件，否则是连接不上 Ceph 存储集群
+// rbd: couldn't connect to the cluster!
+
+
+// 去 node0 节点生成 keyring
+
+// node0
+ su - cephd
+sudo cp /etc/ceph/ceph.client.admin.keyring /etc/ceph/keyring
+
+// admin
+kubectl create -f rbd.yaml --validate=false
+kubectl get pod
+
+// node0 上验证
+docker ps
+mount | grep /dev/rbd0
+docker inspect  a90a808524f0
+
+
+    // 使用 rbd-with-secret & ceph-secret
+rbd-with-secret 
+ceph-secret
+// 使用 k8s secret 对象
+// k8s secret 认证 key 需要使用 base64 编码
+
+
+// # 获取 Ceph keying 并生成 secret key
+sudo grep key /etc/ceph/ceph.client.admin.keyring |awk '{printf "%s", $NF}'|base64
+// 这是一个很神奇的命令,有机会研究下
+
+// admin 用
+ceph auth get-key client.admin |base64
+
+// 修改ceph-secret.yaml 文件
+vi ceph-secret.yaml 
+
+
+// 创建名称为 ceph-secret 的 Secret
+kubectl create -f ceph-secret.yaml
+
+kubectl get secret
+
+// 修改 rbd-with-secret.yaml 文件
+vi rbd-with-secret.yaml 
+
+kubectl create -f rbd-with-secret.yaml 
+kubectl get pod
+
+
+    //   k8s PV & PVC 方式使用
+// PV 集群中已经由管理员配置的一块存储
+// 静态请求
+// 动态请求 StorageClasses
+
+// PVC 用户对存储资源的请求,跟 Pod 类似 
+
+    //     创建测试 Image
+rbd create ceph-rbd-pv-test --size 10
+rbd list
+
+rbd feature disable ceph-rbd-pv-test exclusive-lock, object-map, fast-diff, deep-flatten
+rbd info ceph-rbd-pv-test
+
+sudo rbd map ceph-rbd-pv-test
+rbd showmapped
+
+    //     创建 PV
+// secret 使用之前创建的
+vi rbd-pv.yaml 
+kubectl create -f rbd-pv.yaml
+kubectl get pv
+// 分析字段意义
+
+    //     创建 PVC
+vi rbd-pv-claim.yaml
+kubectl create -f rbd-pv-claim.yaml 
+kubectl get pvc
+// 历史原因无法继续下去, 以下为文字推导
+
+    //     创建挂载 RBD 的 Pod
+vi rbd-pvc-pod1.yaml
+kubectl create -f rbd-pvc-pod1.yaml 
+kubectl get pod
+
+// node0 
+docker ps
+docker exec -it 65cde df -h |grep /dev/rbd1
+docker exec -it 65cde9254c64 mount |grep /dev/rbd1
+
+    //   测试单节点以 Ceph RBD
+    //     单节点测试
+// # node0 执行
+docker exec -it 65cde9254c64 touch /mnt/ceph-rbd-pvc/busybox/ceph-rbd-test.txt
+docker exec -it 65cde9254c64 vi /mnt/ceph-rbd-pvc/busybox/ceph-rbd-test.txt
+docker exec -it 65cde9254c64 cat /mnt/ceph-rbd-pvc/busybox/ceph-rbd-test.txt
+
+// 删除 Pod
+kubectl delete -f rbd-pvc-pod.yaml 
+kubectl get pv,pvc
+
+// 创建一个新的 Pod
+vi rbd-pvc-pod2.yaml 
+kubectl create -f rbd-pvc-pod2.yaml 
+kubectl get pods
+
+// node0 节点执行
+docker ps
+docker exec -it 63d648257636 cat /mnt/ceph-rbd-pvc/busybox/ceph-rbd-test.txt
+
+
+    //     多节点测试
+// node1 上执行，加入 k8s 集群
+kubeadm join --token b87453.4c4b9e895774f3be 10.222.76.189:6443
+kubectl get node
+
+// 删除并重新创建一下 Pod
+kubectl delete -f rbd-pvc-pod1.yaml
+kubectl delete -f rbd-pvc-pod2.yaml
+kubectl create -f rbd-pvc-pod1.yaml 
+
+kubectl create -f rbd-pvc-pod2.yaml
+
+// ceph-rbd-pv-pod2 被分配到 node2 但是状态为 ContainerCreating
+    // rbd: image ceph-rbd-pv-test is locked by other nodes 错误信息
+    // Ceph RBD 仅能被 k8s 中的一个 node 挂载，不支持跨节点挂载同一 Ceph RBD
+
+// rbd 只支持 ReadWriteOnce 和 ReadOnlyMany，暂时并不支持 ReadWriteMany
+// 不支持多读多写
+
+
+
+
+
+    // Kubernetes 集群使用 CephFS 文件存储
+// 持久化存储方案中，提供两种 API 资源方式: PersistentVolume　PV 和 PersistentVolumeClaim PVC
+// PV 可理解为集群资源，PVC 可理解为对集群资源的请求
+
+    //   需求:不管Pod调度到哪个节点都挂载同一个卷
+
+    // 环境、软件准备
+Centos：release 7.4.1708 (Core)
+Ceph：jewel-10.2.10
+Kubernetes：v1.6.2
+Docker：v1.12.6
+
+    //   单节点使用 CephFS
+    //     创建 cephfs
+// 创建元数据服务器 MDS
+ceph-deploy mds create admin node0 node1
+ceph mds stat
+
+// 创建 cephfs
+ceph osd pool create cephfs_data 128
+ceph osd pool create cephfs_metadata 128
+ceph fs new cephfs cephfs_metadata cephfs_data
+ceph fs ls
+
+// 创建认证文件 admin.secret
+cat /etc/ceph/ceph.client.admin.keyring
+vi /etc/ceph/admin.secret
+
+mkdir /mnt/cephfs
+mount -t ceph 10.66.3.86:6789:/ /mnt/cephfs -o name=admin,secretfile=/etc/ceph/admin.secret
+df -h
+
+ // 一个 Ceph 存储集群只支持创建一个 cephfs
+
+    //     使用 cephfs.yaml
+vi cephfs.yaml
+
+//node0 节点
+// 生成 admin.secret 
+cat /etc/ceph/ceph.client.admin.keyring
+vi /etc/ceph/admin.secret
+
+kubectl create -f cephfs.yaml
+kubectl get pods
+
+// node0
+docker ps
+mount
+docker inspect b9f2bac921d1
+
+    //     ceph-secret
+ // 获取 Ceph ceph.client.admin.keyring 并生成 secret key
+ceph auth get-key client.admin |base64
+vi ceph-secret.yaml
+
+kubectl create -f ceph-secret.yaml
+kubectl get secret
+
+vi cephfs-with-secret.yaml
+kubectl create -f cephfs-with-secret.yaml
+kubectl get pods
+
+    //    PV & PVC 方式使用 CephFS
+    //     创建 PV
+vi cephfs-pv.yaml
+kubectl create -f cephfs-pv.yaml 
+kubectl get pv
+
+    //     创建 PVC
+vi kubectl create -f cephfs-pv-claim.yaml
+kubectl create -f cephfs-pv-claim.yaml
+kubectl get pvc
+
+    //     挂载 CephFS
+vi cephfs-pvc-pod1.yaml
+
+
+    //   测试跨节点使用 CephFS
+    //     另外一个 node
+
+vi /mnt/cephfs/test.txt 
+
+// 创建 cephfs-pv-pod1
+kubectl create -f cephfs-pvc-pod.yaml 
+
+kubectl get pod
+kubectl get pod --all-namespaces -o wide
+
+// node1 上操作
+docker ps
+docker exec -it 3cc605bed890 /bin/sh
+    df -h
+    ls  /mnt/cephfs
+    cat /mnt/cephfs/test.txt
+    vi /mnt/cephfs/cephfs-pv-pod1.txt
+    cat /mnt/cephfs/cephfs-pv-pod1.txt
+
+    // 测试跨节点使用 CephFS
+
+// 另外一个 node
+ // 创建挂载 cephfs 的 pod2，配置同 pod1
+vi cephfs-pvc-pod2.yaml   
+kubectl create -f cephfs-pvc-pod2.yaml 
+kubectl get pods --all-namespaces -o wide
+
+// node0 上操作
+docker exec -it f8e544e9f497 /bin/sh
+    df -h
+    ls -l /mnt/cephfs
+    cat /mnt/cephfs/cephfs-pv-pod1.txt
+
+// pod2 中写入文件，看 pod1 中是否能够读取
+// node0 pod2 中写入文件
+docker exec -it f8e544e9f497 /bin/sh
+    vi /mnt/cephfs/cephfs-pv-pod2.txt 
+    cat /mnt/cephfs/cephfs-pv-pod2.txt 
+
+// node1 pod1 读取文件
+docker exec -it 3cc605bed890 /bin/sh
+    ls /mnt/cephfs/
+
+
+
+
+
+
+
+
+// k8s中使用
+// Kubernetes 使用 RBD 作为 StorageClass
+
+    // 静态配置方式
+// 手动调用云/存储服务提供商的接口来配置新的固定大小的 Image 存储卷，
+// 然后创建 PV 对象以在 Kubernetes 中请求分配使用它们
+
+    
+    // 动态卷配置
+// 使用 StorageClass 对象指定的供应商来动态配置存储资源
+
+Centos：release 7.4.1708 (Core)
+Ceph：jewel-10.2.10
+Kubernetes：v1.6.2
+Docker：v1.12.6
+
+// 环境: 三节点 ceph 上文有
+
+
+      // 配置
+// k8s 不支持跨节点挂载同一 Ceph RBD，支持跨节点挂载 CephFS
+ kubernetes-incubator/external-storage
+
+      //   创建 ceph-secret-admin
+ // Ceph 存储集群默认开启 cephx 认证
+ceph auth get-key client.admin |base64
+vi ceph-secret-admin.yaml
+
+kubectl create -f ceph-secret-admin.yaml
+kubectl get secret
+
+
+
+      //   创建 rbd-storage-class
+
+vi rbd-storage-class.yaml 
+// provisioner 该字段指定使用存储卷类型为 kubernetes.io/rbd，
+    // 注意 kubernetes.io/ 开头为 k8s 内部支持的存储提供者，不同的存储卷提供者类型这里要修改成对应的值
+
+// adminId | userId 这里需要指定两种 Ceph 角色 admin 和其他 user，admin 角色默认已经有了，
+    // 其他 user 可以去 Ceph 集群创建一个并赋对应权限值，如果不创建，也可以都指定为 admin
+
+// adminSecretName 为上边创建的 Ceph 管理员 admin 使用的 ceph-secret-admin
+
+// adminSecretNamespace 管理员 secret 使用的命名空间，默认 default，
+    // 如果修改为其他的话，需要修改 ceph-secret-admin.yaml 增加 namespace: other-namespace
+
+kubectl create -f rbd-storage-class.yaml 
+kubectl get storageclass
+
+      //   创建 rbd-dyn-pv-claim
+vi rbd-dyn-pv-claim.yaml
+kubectl create -f rbd-dyn-pv-claim.yaml
+kubectl get pvc
+
+// 创建失败
+kubectl describe pvc/ceph-rbd-dyn-pv-claim
+// failed to create rbd image: executable file not found in $PATH
+// issues/38923 这个 issues 
+//需要 构建一个新的安装了 ceph-common 的同名镜像 hyperkube-amd64 替换官方镜像
+
+vi Dockerfile
+docker build -t custom/hyperkube-amd64:v1.2.1 .    
+
+// 或 扩展存储卷插件
+https://github.com/kubernetes-incubator/external-storage
+
+    // 采用 rbac 方式来创建该 deployment
+// ClusterRoleBinding 默认绑定 namespace: default，
+// 如果要修改为其他 namespace，对应的 storageClass 中的adminSecretNamespace 也需要对应修改
+
+git clone https://github.com/kubernetes-incubator/external-storage.git
+tree external-storage/ceph/rbd/deploy/
+kubectl apply -f rbac/
+kubectl get pods
+
+// 修改上边 rbd-storage-class.yaml 文件将 provisioner: kubernetes.io/rbd 修改为 provisioner: ceph.com/rbd
+kubectl apply -f rbd-storage-class.yaml
+kubectl get sc
+kubectl create -f rbd-dyn-pv-claim.yaml 
+kubectl get pvc
+
+
+      //   创建 rbd-dyn-pvc-pod
+vi rbd-dyn-pvc-pod1.yaml
+kubectl create -f rbd-dyn-pvc-pod1.yaml
+kubectl get pods 
+
+// node0 上操作
+docker ps
+
+// 查看容器挂载信息
+docker inspect 1095a0a49cc6
+
+// 进入容器内，查看挂载详情以及测试生成文件
+docker exec -it 1095a0a49cc6 /bin/sh
+
+    df -h                         10.0G     34.1M     10.0G   0% /
+// /dev/rbd0               975.9M      2.5M    906.2M   0% /mnt/ceph-dyn-rbd-pvc/busybox
+    cd /mnt/ceph-dyn-rbd-pvc/busybox
+    dd if=/dev/zero of=test-rbd-dyn-1 bs=500M count=1
+    df -h
+
+
+rbd list
+rbd info kubernetes-dynamic-pvc-cd6
+
+kubectl create -f rbd-dyn-pv-claim2.yaml
+kubectl get pvc
+
+kubectl create -f rbd-dyn-pvc-pod2.yaml 
+kubectl get pod
+
+// node0 上执行
+docker ps
+docker exec -it 32c632fedff6 df -h
+
+rbd list
+rbd info kubernetes-dynamic-pvc-1c2ae
+
+// 使用动态配置的卷，则默认的回收策略为  删除
+// 将回收策略从 delete 更改为 retain
+// 修改 PV 对象中的 persistentVolumeReclaimPolicy
+
+
+https://blog.csdn.net/aixiaoyang168/article/details/79120095
+// 因为环境原因,没法测试
